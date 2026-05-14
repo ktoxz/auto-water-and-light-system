@@ -1,0 +1,3 @@
+class AlertsScreen {
+  const AlertsScreen();
+}

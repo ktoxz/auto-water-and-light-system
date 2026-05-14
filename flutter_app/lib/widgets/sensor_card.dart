@@ -1,0 +1,3 @@
+class SensorCard {
+  const SensorCard();
+}

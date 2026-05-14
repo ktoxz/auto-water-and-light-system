@@ -1,0 +1,3 @@
+class DeviceToggle {
+  const DeviceToggle();
+}

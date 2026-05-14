@@ -1,0 +1,13 @@
+[Unit]
+Description=Vosk WebSocket Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/raspberry_pi
+ExecStart=/usr/bin/python3 /home/pi/raspberry_pi/voice/websocket_server.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

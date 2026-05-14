@@ -1,0 +1,3 @@
+class ModeBadge {
+  const ModeBadge();
+}

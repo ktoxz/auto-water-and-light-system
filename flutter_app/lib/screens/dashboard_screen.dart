@@ -1,0 +1,3 @@
+class DashboardScreen {
+  const DashboardScreen();
+}

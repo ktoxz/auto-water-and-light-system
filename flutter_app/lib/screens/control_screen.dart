@@ -1,0 +1,3 @@
+class ControlScreen {
+  const ControlScreen();
+}

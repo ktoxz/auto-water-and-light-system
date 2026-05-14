@@ -1,0 +1,3 @@
+class AlertItem {
+  const AlertItem();
+}

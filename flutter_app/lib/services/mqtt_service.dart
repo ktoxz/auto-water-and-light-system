@@ -1,0 +1,3 @@
+class MqttService {
+  const MqttService();
+}

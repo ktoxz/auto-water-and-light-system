@@ -1,0 +1,3 @@
+class VoiceScreen {
+  const VoiceScreen();
+}

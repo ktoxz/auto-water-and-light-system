@@ -299,10 +299,11 @@ unzip vosk-model-small-vn-0.4.zip
 
 ### Buổi Chiều — Khôi: Firmware + MQTT
 
-#### Cài Thonny IDE & MicroPython (thay Arduino IDE)
-- Tải **Thonny IDE** — miễn phí, hỗ trợ MicroPython sẵn
-- Flash MicroPython firmware vào ESP32: vào Tools → Options → Interpreter → MicroPython (ESP32) → Install or update firmware
-- Thư viện cần dùng: `umqtt.simple` (có sẵn), `dht` (có sẵn), `json` (built-in) — **không cần cài thêm gì**
+#### Cài Arduino IDE & Libraries
+- Tải **Arduino IDE** → thêm ESP32 board URL:
+  `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
+- Vào Library Manager cài: `PubSubClient`, `DHT sensor library` (Adafruit), `ArduinoJson`
+- `WiFiClientSecure` đã có sẵn trong ESP32 core, không cần cài thêm
 - Cấu hình broker: **HiveMQ Cloud** (để Khôi test độc lập không cần RPi5)
 
 #### MQTT Topics
@@ -625,7 +626,7 @@ Tích hợp hoàn chỉnh, đo thực nghiệm, quay demo, viết báo cáo.
 - [ ] Advanced IP Scanner
 
 ### Phần mềm — Khôi cài
-- [ ] Arduino IDE + ESP32 board + libraries
+- [ ] Arduino IDE + ESP32 board URL + libraries (PubSubClient, DHT, ArduinoJson)
 - [ ] Flutter SDK + Android Studio
 - [ ] Bật Developer Mode + USB Debugging trên điện thoại Android của bạn
 
@@ -643,20 +644,20 @@ Tích hợp hoàn chỉnh, đo thực nghiệm, quay demo, viết báo cáo.
 ```
 smart-home-iot/
 │
-├── esp32/                          # MicroPython — Khôi phụ trách
-│   ├── esp32_1_tuoi_cay/           # ESP32 #1: Tưới cây
-│   │   ├── main.py                 # Entry point, vòng lặp chính
-│   │   ├── config.py               # WiFi, MQTT broker, ngưỡng cảm biến
-│   │   ├── mqtt_client.py          # Kết nối & xử lý MQTT (umqtt.simple)
-│   │   ├── soil_sensor.py          # Đọc LM393: AO→GPIO34 (giá trị %), DO→GPIO35 (interrupt ngưỡng)
-│   │   └── relay_control.py        # Điều khiển relay bơm & phun sương
+├── esp32/                              # C++ (Arduino framework) — Khôi phụ trách
+│   ├── esp32_1_tuoi_cay/               # ESP32 #1: Tưới cây
+│   │   ├── esp32_1_tuoi_cay.ino        # Entry point (setup + loop)
+│   │   ├── config.h                    # WiFi, MQTT broker, pin, ngưỡng cảm biến
+│   │   ├── mqtt_handler.h/.cpp         # Kết nối & xử lý MQTT (PubSubClient)
+│   │   ├── soil_sensor.h/.cpp          # Đọc LM393: AO→GPIO34 (%), DO→GPIO35 (interrupt)
+│   │   └── relay_control.h/.cpp        # Điều khiển relay bơm & phun sương
 │   │
-│   └── esp32_2_chieu_sang/         # ESP32 #2: Chiếu sáng
-│       ├── main.py                 # Entry point, vòng lặp chính
-│       ├── config.py               # WiFi, MQTT broker, ngưỡng cảm biến
-│       ├── mqtt_client.py          # Kết nối & xử lý MQTT (umqtt.simple)
-│       ├── dht_sensor.py           # Đọc DHT11: nhiệt độ & độ ẩm (GPIO4)
-│       └── relay_control.py        # Điều khiển relay LED (GPIO25)
+│   └── esp32_2_chieu_sang/             # ESP32 #2: Chiếu sáng
+│       ├── esp32_2_chieu_sang.ino      # Entry point (setup + loop)
+│       ├── config.h                    # WiFi, MQTT broker, pin, ngưỡng cảm biến
+│       ├── mqtt_handler.h/.cpp         # Kết nối & xử lý MQTT (PubSubClient)
+│       ├── dht_sensor.h/.cpp           # Đọc DHT11: nhiệt độ & độ ẩm (GPIO4)
+│       └── relay_control.h/.cpp        # Điều khiển relay LED (GPIO25)
 │
 ├── raspberry_pi/                   # Python 3 — Hậu phụ trách
 │   ├── main.py                     # Khởi động toàn bộ services
@@ -745,47 +746,52 @@ smart-home-iot/
 
 ---
 
-## Lưu Ý MicroPython (Thay Arduino C++)
+## Lưu Ý ESP32 C++ (Arduino Framework)
 
-**Tool nạp code:** dùng **Thonny IDE** (miễn phí, thân thiện) hoặc `mpremote`
+**Tool nạp code:** **Arduino IDE** hoặc **VS Code + PlatformIO** (PlatformIO chuyên nghiệp hơn, hỗ trợ chia file .h/.cpp tốt hơn)
 
-**Thư viện MQTT:** `umqtt.simple` — có sẵn trong MicroPython firmware, không cần cài thêm
+**Thư viện cần cài (Library Manager):**
 
-**Thư viện DHT:** module `dht` — có sẵn trong MicroPython
+| Thư viện | Dùng cho |
+|---------|---------|
+| `PubSubClient` | MQTT |
+| `DHT sensor library` (Adafruit) | DHT11 |
+| `ArduinoJson` | Parse JSON lệnh từ MQTT |
+| `WiFiClientSecure` | Kết nối HiveMQ Cloud qua TLS (có sẵn trong ESP32 core) |
 
-**JSON:** dùng module `json` built-in, không cần ArduinoJson
+**Cấu trúc `.ino` trên ESP32:**
+- `setup()`: kết nối WiFi → kết nối MQTT → cấu hình interrupt DO (LM393)
+- `loop()`: đọc sensor AO mỗi 5 giây → publish MQTT → kiểm tra lệnh subscribe → điều khiển relay
 
-**Cấu trúc `main.py` trên ESP32:**
-- Kết nối WiFi
-- Kết nối MQTT broker (HiveMQ Cloud)
-- Vòng lặp chính: đọc sensor → publish → kiểm tra lệnh subscribe → điều khiển relay
+**`config.h` — tách riêng để dễ thay đổi:**
+```cpp
+// WiFi
+#define WIFI_SSID     "..."
+#define WIFI_PASSWORD "..."
 
-**`config.py` — tách riêng để dễ thay đổi:**
+// HiveMQ Cloud
+#define MQTT_HOST     "xxx.hivemq.cloud"
+#define MQTT_PORT     8883
+#define MQTT_USER     "..."
+#define MQTT_PASSWORD "..."
+
+// Cảm biến LM393
+#define SOIL_AO_PIN         34    // ADC — đọc giá trị % thực tế
+#define SOIL_DO_PIN         35    // Digital — interrupt ngưỡng vật lý
+#define SOIL_DRY_THRESHOLD  20    // % — dưới ngưỡng = khô → bật bơm
+#define SOIL_WET_THRESHOLD  80    // % — trên ngưỡng = quá ẩm → tắt bơm
+#define PUMP_MAX_RUNTIME    300   // giây — bơm chạy tối đa 5 phút
+
+// Cảm biến DHT11
+#define DHT_PIN             4
+#define TEMP_HIGH_THRESHOLD 35    // °C
+#define HUMIDITY_LOW        40    // % — dưới ngưỡng → bật phun sương
+#define HUMIDITY_HIGH       85    // % — trên ngưỡng → tắt phun sương
 ```
-WIFI_SSID     = "..."
-WIFI_PASSWORD = "..."
-MQTT_HOST     = "xxx.hivemq.cloud"
-MQTT_PORT     = 8883
-MQTT_USER     = "..."
-MQTT_PASSWORD = "..."
-
-# Cảm biến LM393
-SOIL_AO_PIN         = 34   # ADC — đọc giá trị % thực tế
-SOIL_DO_PIN         = 35   # Digital — interrupt ngưỡng vật lý (chỉnh bằng núm vặn)
-SOIL_DRY_THRESHOLD  = 20   # % — dưới ngưỡng này = khô → bật bơm
-SOIL_WET_THRESHOLD  = 80   # % — trên ngưỡng này = quá ẩm → tắt bơm
-PUMP_MAX_RUNTIME    = 300  # giây — bơm chạy tối đa 5 phút
-
-# Cảm biến DHT11
-TEMP_HIGH_THRESHOLD = 35   # °C
-HUMIDITY_LOW        = 40   # % — dưới ngưỡng → bật phun sương
-HUMIDITY_HIGH       = 85   # % — trên ngưỡng → tắt phun sương
-```
-
 **`.gitignore` nên có:**
 ```
 *.env
-config.py          # Chứa password — không commit lên git
+config.h           # Chứa password — không commit lên git
 raspberry_pi/models/
 __pycache__/
 .dart_tool/

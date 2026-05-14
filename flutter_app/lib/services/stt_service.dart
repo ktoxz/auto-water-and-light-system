@@ -1,0 +1,3 @@
+class SttService {
+  const SttService();
+}

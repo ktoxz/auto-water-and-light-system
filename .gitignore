@@ -3,3 +3,10 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+**/__pycache__/
+*.pyc
+raspberry_pi/models/
+flutter_app/.dart_tool/
+flutter_app/build/
+flutter_app/.packages
+flutter_app/.flutter-plugins

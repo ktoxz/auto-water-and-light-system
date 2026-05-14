@@ -1,0 +1,3 @@
+class AlertModel {
+  const AlertModel();
+}
