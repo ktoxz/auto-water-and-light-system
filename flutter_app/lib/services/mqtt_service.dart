@@ -16,14 +16,26 @@ class MqttService {
   final _alertController = StreamController<AlertModel>.broadcast();
   final _deviceStatusController = StreamController<Map<String, bool>>.broadcast();
   final _connectionController = StreamController<bool>.broadcast();
+  final _statusController = StreamController<String>.broadcast();
   final _voiceResponseController = StreamController<String>.broadcast();
 
   Stream<SensorData> get sensorStream => _sensorController.stream;
   Stream<AlertModel> get alertStream => _alertController.stream;
-  Stream<Map<String, bool>> get deviceStatusStream => _deviceStatusController.stream;
-  Stream<bool> get connectionStream => _connectionController.stream;
+  Stream<Map<String, bool>> get deviceStatusStream async* {
+    yield Map.from(_deviceStates);
+    yield* _deviceStatusController.stream;
+  }
+  Stream<bool> get connectionStream async* {
+    yield _isConnected;
+    yield* _connectionController.stream;
+  }
+  Stream<String> get statusStream async* {
+    yield _lastStatus;
+    yield* _statusController.stream;
+  }
   Stream<String> get voiceResponseStream => _voiceResponseController.stream;
 
+  String _lastStatus = 'Chưa kết nối MQTT';
   bool _isConnected = false;
   bool _isConnecting = false;
   bool _disposed = false;
@@ -43,8 +55,9 @@ class MqttService {
 
     _reconnectTimer?.cancel();
     _isConnecting = true;
-    final clientId = 'flutter_${DateTime.now().millisecondsSinceEpoch}';
+    _setStatus('Đang kết nối MQTT TLS ${AppConfig.hiveMqPort}');
 
+    final clientId = 'flutter_${DateTime.now().millisecondsSinceEpoch}';
     final client = MqttServerClient.withPort(
       AppConfig.hiveMqHost,
       clientId,
@@ -54,35 +67,53 @@ class MqttService {
 
     client.secure = true;
     client.securityContext = SecurityContext.defaultContext;
-    client.keepAlivePeriod = 20;
+    client.keepAlivePeriod = 30;
     client.autoReconnect = false;
     client.logging(on: true);
-    client.connectTimeoutPeriod = 30000;
+    client.connectTimeoutPeriod = 15000;
+    client.onBadCertificate = (dynamic cert) => true;
 
     client.connectionMessage = MqttConnectMessage()
         .withClientIdentifier(clientId)
         .withProtocolName('MQTT')
         .withProtocolVersion(4)
-        .authenticateAs(AppConfig.hiveMqUsername, AppConfig.hiveMqPassword)
         .startClean()
-        .withWillQos(MqttQos.atLeastOnce);
+        .withWillQos(MqttQos.atMostOnce);
 
     client.onConnected = _onConnected;
     client.onDisconnected = _onDisconnected;
-    client.onBadCertificate = (dynamic cert) => true;
 
     try {
-      await client.connect().timeout(
-        const Duration(seconds: 30),
+      final status = await client
+          .connect(AppConfig.hiveMqUsername, AppConfig.hiveMqPassword)
+          .timeout(
+        const Duration(seconds: 15),
         onTimeout: () {
-          print('MQTT: connect() timed out');
+          _setStatus('MQTT TLS timeout');
           client.disconnect();
           return client.connectionStatus;
         },
       );
-      print('MQTT: connect() returned, state=${client.connectionStatus?.state}');
+
+      final state = status?.state ?? client.connectionStatus?.state;
+      final returnCode = status?.returnCode ?? client.connectionStatus?.returnCode;
+      final reason = status?.disconnectionOrigin ?? client.connectionStatus?.disconnectionOrigin;
+      print('MQTT: returned, state=$state, returnCode=$returnCode, reason=$reason');
+
+      if (state == MqttConnectionState.connected) {
+        _setStatus('MQTT TLS đã kết nối HiveMQ');
+        _setConnected(true);
+        _subscribeToTopics();
+      } else {
+        _setStatus('MQTT TLS state=$state, code=$returnCode, reason=$reason');
+        _setConnected(false);
+        try {
+          client.disconnect();
+        } catch (_) {}
+      }
     } catch (e) {
-      print('MQTT: connect() error — $e');
+      print('MQTT: connect error — $e');
+      _setStatus('MQTT TLS lỗi: $e');
       _setConnected(false);
       try {
         client.disconnect();
@@ -94,6 +125,7 @@ class MqttService {
 
   void _onConnected() {
     print('MQTT: Connected!');
+    _setStatus('MQTT TLS đã kết nối HiveMQ');
     _setConnected(true);
     _subscribeToTopics();
   }
@@ -116,9 +148,16 @@ class MqttService {
     }
   }
 
+  void _setStatus(String value) {
+    _lastStatus = value;
+    if (!_statusController.isClosed) {
+      _statusController.add(value);
+    }
+  }
+
   void _subscribeToTopics() {
     final client = _client;
-    if (client == null) return;
+    if (client == null || client.connectionStatus?.state != MqttConnectionState.connected) return;
 
     final topics = [
       AppConfig.topicTemp,
@@ -132,7 +171,7 @@ class MqttService {
     ];
 
     for (final topic in topics) {
-      client.subscribe(topic, MqttQos.atLeastOnce);
+      client.subscribe(topic, MqttQos.atMostOnce);
     }
 
     _updatesSubscription?.cancel();
@@ -147,6 +186,7 @@ class MqttService {
         publish.payload.message,
       );
       print('MQTT recv: $topic = $raw');
+      _setStatus('Nhận $topic = $raw');
       _handleMessage(topic, raw);
     }
   }
@@ -180,6 +220,7 @@ class MqttService {
       }
     } catch (e) {
       print('MQTT: parse error on $topic — $e');
+      _setStatus('Lỗi parse $topic: $e');
     }
   }
 
@@ -229,10 +270,11 @@ class MqttService {
 
     try {
       final builder = MqttClientPayloadBuilder()..addString(payload);
-      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+      client.publishMessage(topic, MqttQos.atMostOnce, builder.payload!);
       return true;
     } catch (e) {
       print('MQTT: publish error on $topic — $e');
+      _setStatus('Lỗi publish $topic: $e');
       return false;
     }
   }
@@ -249,6 +291,7 @@ class MqttService {
     _alertController.close();
     _deviceStatusController.close();
     _connectionController.close();
+    _statusController.close();
     _voiceResponseController.close();
   }
 }

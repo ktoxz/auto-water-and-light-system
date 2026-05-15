@@ -12,18 +12,37 @@ void main() {
   runApp(const SmartHomeApp());
 }
 
-class SmartHomeApp extends StatelessWidget {
+class SmartHomeApp extends StatefulWidget {
   const SmartHomeApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final mqttService = MqttService();
-    final wsService = WebSocketService();
-    final sttService = SttService(
+  State<SmartHomeApp> createState() => _SmartHomeAppState();
+}
+
+class _SmartHomeAppState extends State<SmartHomeApp> {
+  late final MqttService mqttService;
+  late final WebSocketService wsService;
+  late final SttService sttService;
+
+  @override
+  void initState() {
+    super.initState();
+    mqttService = MqttService();
+    wsService = WebSocketService();
+    sttService = SttService(
       wsService: wsService,
       mqttService: mqttService,
     );
+  }
 
+  @override
+  void dispose() {
+    mqttService.disconnect();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         Provider<MqttService>.value(value: mqttService),
@@ -72,8 +91,6 @@ class _AppBootstrapState extends State<AppBootstrap> {
   }
 
   Future<void> _init() async {
-    // Chạy connect + detectMode song song, tối đa 10 giây tổng
-    // App sẽ vào MainApp dù connect thành công hay không
     await Future.wait([
       widget.mqttService.connect(),
       widget.sttService.detectMode(),
@@ -87,17 +104,11 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
     print('Bootstrap: done, MQTT=${widget.mqttService.isConnected}');
 
-    if (mounted) setState(() {}); // trigger rebuild → vào MainApp
-  }
-
-  bool get _ready {
-    // Vào app ngay sau khi init xong, không chờ connected
-    return true;
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    // Hiện loading tối đa 10 giây rồi vào app dù connected hay chưa
     return FutureBuilder(
       future: Future.delayed(const Duration(milliseconds: 500)),
       builder: (context, snapshot) {

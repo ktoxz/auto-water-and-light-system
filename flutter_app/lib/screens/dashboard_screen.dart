@@ -22,10 +22,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   );
   Map<String, bool> _deviceStates = {};
   bool _mqttConnected = false;
+  bool _hasSensorData = false;
+
+  String _mqttStatus = 'Chưa kết nối MQTT';
 
   late StreamSubscription _sensorSub;
   late StreamSubscription _deviceSub;
   late StreamSubscription _connSub;
+  late StreamSubscription _statusSub;
 
   @override
   void initState() {
@@ -36,7 +40,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _deviceStates = Map.from(mqtt.deviceStates);
 
     _sensorSub = mqtt.sensorStream.listen((data) {
-      if (mounted) setState(() => _sensor = data);
+      if (mounted) {
+        setState(() {
+          _sensor = data;
+          _hasSensorData = true;
+        });
+      }
     });
 
     _deviceSub = mqtt.deviceStatusStream.listen((states) {
@@ -46,6 +55,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _connSub = mqtt.connectionStream.listen((connected) {
       if (mounted) setState(() => _mqttConnected = connected);
     });
+
+    _statusSub = mqtt.statusStream.listen((status) {
+      if (mounted) setState(() => _mqttStatus = status);
+    });
   }
 
   @override
@@ -53,6 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _sensorSub.cancel();
     _deviceSub.cancel();
     _connSub.cancel();
+    _statusSub.cancel();
     super.dispose();
   }
 
@@ -185,8 +199,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const SizedBox(height: 12),
                       _buildInfoRow('HiveMQ Cloud', _mqttConnected),
-                      _buildInfoRow('ESP32', _mqttConnected && _sensor.temperature > 0),
-                      _buildInfoRow('RPi5 Broker', _mqttConnected),
+                      _buildInfoRow('ESP32', _mqttConnected && (_hasSensorData || _deviceStates.isNotEmpty)),
+                      _buildInfoRow('RPi5 Broker', false),
+                      const SizedBox(height: 8),
+                      Text(
+                        _mqttStatus,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.grey[700],
+                            ),
+                      ),
                     ],
                   ),
                 ),
