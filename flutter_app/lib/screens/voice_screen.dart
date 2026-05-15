@@ -283,7 +283,7 @@ class _ModeDescription extends StatelessWidget {
   Widget build(BuildContext context) {
     if (mode == VoiceMode.local) {
       return Text(
-        'Vosk offline trên RPi5 → Gemma 3 4B',
+        'PhoWhisper offline trên RPi5 → Gemma 3 4B',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: Colors.green[600],
