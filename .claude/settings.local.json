@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(flutter pub *)",
+      "PowerShell(pio run *)",
+      "PowerShell(flutter *)",
+      "PowerShell(Test-NetConnection *)"
+    ]
+  }
+}

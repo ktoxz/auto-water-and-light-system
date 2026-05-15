@@ -15,10 +15,13 @@
 #define TOPIC_TEMP "home/temp"
 #define TOPIC_HUMIDITY "home/humidity"
 #define TOPIC_SOIL "home/soil"
-#define TOPIC_CMD_PUMP_FOG "home/cmd/pump" // V4 cũ → pump
-#define TOPIC_CMD_MIST "home/cmd/mist"     // phun sương riêng nếu cần
-#define TOPIC_CMD_LIGHT "home/cmd/led"     // V5 cũ → led
+#define TOPIC_CMD_PUMP_FOG "home/pump/control"
+#define TOPIC_CMD_MIST "home/mist/control"
+#define TOPIC_CMD_LIGHT "home/led/control"
 #define TOPIC_STATUS "home/status/esp32"
+#define TOPIC_STATUS_PUMP "home/pump/status"
+#define TOPIC_STATUS_MIST "home/mist/status"
+#define TOPIC_STATUS_LIGHT "home/led/status"
 #define TOPIC_ALERTS "home/alerts"
 
 // Pin map — GIỮ NGUYÊN từ code Blynk cũ

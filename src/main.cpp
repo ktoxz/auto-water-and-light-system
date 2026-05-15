@@ -17,6 +17,7 @@ int           currentSoilMoisture = 0;
 bool          pumpFogState        = false;
 bool          lightState          = false;
 unsigned long pumpStartTime       = 0;
+int           lastMqttState       = 0;
 
 unsigned long lastSensorSend = 0;
 unsigned long lastMqttRetry  = 0;
@@ -45,6 +46,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length);
 void sendSensorData();
 void handleSafety();
 void setRelay(uint8_t pin, bool on, const char* name);
+void publishPumpFogStatus();
+void publishLightStatus();
+void publishDeviceStatuses();
 void publishAlert(const char* type, const char* title, const char* message,
                   unsigned long& lastSent);
 
@@ -58,12 +62,16 @@ void setup() {
   digitalWrite(RELAY_LIGHT,    HIGH); // OFF
 
   dht.begin();
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
 
   wifiClient.setInsecure(); // TLS không verify cert — OK cho lab
+  wifiClient.setHandshakeTimeout(30);
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
   mqtt.setKeepAlive(60);
-  mqtt.setBufferSize(512);
+  mqtt.setSocketTimeout(30);
+  mqtt.setBufferSize(1024);
 
   if (connectWiFi()) {
     connectMQTT();
@@ -93,6 +101,8 @@ void loop() {
 // ── WiFi — có timeout, không block vô hạn ────────────────────────────────────
 bool connectWiFi() {
   Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
+  WiFi.disconnect(true);
+  delay(200);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   unsigned long start = millis();
@@ -112,6 +122,7 @@ bool connectWiFi() {
 // ── MQTT — có timeout, không block vô hạn ────────────────────────────────────
 bool connectMQTT() {
   Serial.print("[MQTT] Connecting to HiveMQ...");
+  wifiClient.stop();
 
   unsigned long start = millis();
   while (!mqtt.connected()) {
@@ -119,14 +130,22 @@ bool connectMQTT() {
       Serial.println("\n[MQTT] TIMEOUT — se thu lai sau");
       return false;
     }
-    if (mqtt.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD)) {
+    String clientId = String(MQTT_CLIENT_ID) + "-" + WiFi.macAddress();
+    clientId.replace(":", "");
+
+    if (mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD)) {
+      lastMqttState = 0;
       Serial.println(" connected!");
       mqtt.subscribe(TOPIC_CMD_PUMP_FOG);
+      mqtt.subscribe(TOPIC_CMD_MIST);
       mqtt.subscribe(TOPIC_CMD_LIGHT);
       mqtt.publish(TOPIC_STATUS, "online", true); // retained — Hậu detect offline
+      publishDeviceStatuses();
       return true;
     }
-    Serial.printf(" rc=%d, retrying...\n", mqtt.state());
+    lastMqttState = mqtt.state();
+    Serial.printf(" rc=%d, tls_connected=%d, retrying...\n", lastMqttState, wifiClient.connected());
+    wifiClient.stop();
     delay(1000);
   }
   return true;
@@ -149,7 +168,7 @@ void maintainConnections() {
   if (WiFi.status() == WL_CONNECTED && !mqtt.connected()) {
     if (now - lastMqttRetry >= MQTT_RETRY_MS) {
       lastMqttRetry = now;
-      Serial.println("[MQTT] Reconnecting...");
+      Serial.printf("[MQTT] Reconnecting... last_state=%d\n", lastMqttState);
       connectMQTT();
     }
   }
@@ -161,6 +180,7 @@ void handleSafety() {
     Serial.println("[SAFETY] Pump on too long — force OFF");
     setRelay(RELAY_PUMP_FOG, false, "pump");
     pumpFogState = false;
+    publishPumpFogStatus();
     // Safety alert: dummy lastSent = 0 để luôn gửi được
     unsigned long dummy = 0;
     publishAlert("critical", "Bom tat khan cap",
@@ -177,14 +197,16 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   bool turnOn = (strcmp(msg, "ON") == 0);
 
-  if (strcmp(topic, TOPIC_CMD_PUMP_FOG) == 0) {
+  if (strcmp(topic, TOPIC_CMD_PUMP_FOG) == 0 || strcmp(topic, TOPIC_CMD_MIST) == 0) {
     setRelay(RELAY_PUMP_FOG, turnOn, "pump_fog");
     pumpFogState = turnOn;
     if (turnOn) pumpStartTime = millis();
+    publishPumpFogStatus();
   }
   else if (strcmp(topic, TOPIC_CMD_LIGHT) == 0) {
     setRelay(RELAY_LIGHT, turnOn, "light");
     lightState = turnOn;
+    publishLightStatus();
   }
 }
 
@@ -232,6 +254,7 @@ void sendSensorData() {
     if (lightState) {
       setRelay(RELAY_LIGHT, false, "light");
       lightState = false;
+      publishLightStatus();
     }
     publishAlert("critical", "Nhiet do cao", "Nhiet do tren 35C, da tat den", lastAlertTempHigh);
   }
@@ -249,10 +272,12 @@ run_auto:
       setRelay(RELAY_PUMP_FOG, true, "pump_fog");
       pumpFogState  = true;
       pumpStartTime = millis();
+      publishPumpFogStatus();
       Serial.println("[AUTO] Soil dry — pump ON");
     } else if (currentSoilMoisture > (soilThreshold + 10) && pumpFogState) {
       setRelay(RELAY_PUMP_FOG, false, "pump_fog");
       pumpFogState = false;
+      publishPumpFogStatus();
       Serial.println("[AUTO] Soil OK — pump OFF");
     }
   }
@@ -262,6 +287,23 @@ run_auto:
 void setRelay(uint8_t pin, bool on, const char* name) {
   digitalWrite(pin, on ? LOW : HIGH);
   Serial.printf("[Relay] %s -> %s\n", name, on ? "ON" : "OFF");
+}
+
+void publishPumpFogStatus() {
+  if (!mqtt.connected()) return;
+  const char* state = pumpFogState ? "ON" : "OFF";
+  mqtt.publish(TOPIC_STATUS_PUMP, state, true);
+  mqtt.publish(TOPIC_STATUS_MIST, state, true);
+}
+
+void publishLightStatus() {
+  if (!mqtt.connected()) return;
+  mqtt.publish(TOPIC_STATUS_LIGHT, lightState ? "ON" : "OFF", true);
+}
+
+void publishDeviceStatuses() {
+  publishPumpFogStatus();
+  publishLightStatus();
 }
 
 // lastSent truyền bằng reference — mỗi loại alert dùng biến riêng

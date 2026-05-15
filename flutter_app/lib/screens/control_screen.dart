@@ -36,30 +36,42 @@ class _ControlScreenState extends State<ControlScreen> {
   }
 
   void _sendCommand(String device, bool on) {
-    context.read<MqttService>().publishControl(device, on);
-    setState(() => _deviceStates[device] = on);
+    final sent = context.read<MqttService>().publishControl(device, on);
+    if (!sent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('MQTT chưa kết nối, chưa gửi được lệnh'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
   }
 
   void _emergencyStop() {
-    for (final device in ['pump', 'mist', 'led']) {
-      context.read<MqttService>().publishControl(device, false);
-    }
-    setState(() {
-      _deviceStates = {'pump': false, 'mist': false, 'led': false};
-    });
+    final mqtt = context.read<MqttService>();
+    final sent = [
+      mqtt.publishControl('pump', false),
+      mqtt.publishControl('mist', false),
+      mqtt.publishControl('led', false),
+    ].any((value) => value);
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('🛑 Đã dừng tất cả thiết bị'),
-        backgroundColor: Colors.red,
+      SnackBar(
+        content: Text(sent
+            ? 'Đã gửi lệnh dừng tất cả thiết bị'
+            : 'MQTT chưa kết nối, chưa gửi được lệnh'),
+        backgroundColor: sent ? Colors.red : Colors.orange,
       ),
     );
   }
 
   void _waterNow() {
-    context.read<MqttService>().publishControl('pump', true);
-    setState(() => _deviceStates['pump'] = true);
+    final sent = context.read<MqttService>().publishControl('pump', true);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('💧 Đã bật máy bơm')),
+      SnackBar(
+        content: Text(sent ? 'Đã gửi lệnh bật máy bơm' : 'MQTT chưa kết nối, chưa gửi được lệnh'),
+        backgroundColor: sent ? null : Colors.orange,
+      ),
     );
   }
 

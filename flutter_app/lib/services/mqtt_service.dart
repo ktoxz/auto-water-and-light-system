@@ -8,7 +8,9 @@ import '../models/sensor_data.dart';
 import '../models/alert_model.dart';
 
 class MqttService {
-  late MqttServerClient _client;
+  MqttServerClient? _client;
+  StreamSubscription? _updatesSubscription;
+  Timer? _reconnectTimer;
 
   final _sensorController = StreamController<SensorData>.broadcast();
   final _alertController = StreamController<AlertModel>.broadcast();
@@ -23,6 +25,8 @@ class MqttService {
   Stream<String> get voiceResponseStream => _voiceResponseController.stream;
 
   bool _isConnected = false;
+  bool _isConnecting = false;
+  bool _disposed = false;
   bool get isConnected => _isConnected;
 
   final Map<String, bool> _deviceStates = {
@@ -35,67 +39,87 @@ class MqttService {
   MqttService();
 
   Future<void> connect() async {
+    if (_disposed || _isConnected || _isConnecting) return;
+
+    _reconnectTimer?.cancel();
+    _isConnecting = true;
     final clientId = 'flutter_${DateTime.now().millisecondsSinceEpoch}';
 
-    _client = MqttServerClient.withPort(
+    final client = MqttServerClient.withPort(
       AppConfig.hiveMqHost,
       clientId,
       AppConfig.hiveMqPort,
     );
+    _client = client;
 
-    _client.secure = true;
-    _client.securityContext = SecurityContext.defaultContext;
-    _client.keepAlivePeriod = 20;
-    _client.autoReconnect = false; // tắt autoReconnect, tự reconnect thủ công
-    _client.logging(on: true);    // bật log để debug
-    _client.connectTimeoutPeriod = 30000;
+    client.secure = true;
+    client.securityContext = SecurityContext.defaultContext;
+    client.keepAlivePeriod = 20;
+    client.autoReconnect = false;
+    client.logging(on: true);
+    client.connectTimeoutPeriod = 30000;
 
-    _client.connectionMessage = MqttConnectMessage()
+    client.connectionMessage = MqttConnectMessage()
         .withClientIdentifier(clientId)
-        .withProtocolName('MQTT')      // MQTT v3.1.1
-        .withProtocolVersion(4)        // 4 = v3.1.1
+        .withProtocolName('MQTT')
+        .withProtocolVersion(4)
         .authenticateAs(AppConfig.hiveMqUsername, AppConfig.hiveMqPassword)
         .startClean()
         .withWillQos(MqttQos.atLeastOnce);
 
-    _client.onConnected = _onConnected;
-    _client.onDisconnected = _onDisconnected;
-    _client.onBadCertificate = (dynamic cert) => true;
+    client.onConnected = _onConnected;
+    client.onDisconnected = _onDisconnected;
+    client.onBadCertificate = (dynamic cert) => true;
 
     try {
-      // Timeout toàn bộ quá trình connect sau 8 giây
-      await _client.connect().timeout(
+      await client.connect().timeout(
         const Duration(seconds: 30),
         onTimeout: () {
           print('MQTT: connect() timed out');
-          _client.disconnect();
+          client.disconnect();
+          return client.connectionStatus;
         },
       );
-      print('MQTT: connect() returned, state=${_client.connectionStatus?.state}');
+      print('MQTT: connect() returned, state=${client.connectionStatus?.state}');
     } catch (e) {
       print('MQTT: connect() error — $e');
-      _isConnected = false;
-      _connectionController.add(false);
-      try { _client.disconnect(); } catch (_) {}
+      _setConnected(false);
+      try {
+        client.disconnect();
+      } catch (_) {}
+    } finally {
+      _isConnecting = false;
     }
   }
 
   void _onConnected() {
     print('MQTT: Connected!');
-    _isConnected = true;
-    _connectionController.add(true);
+    _setConnected(true);
     _subscribeToTopics();
   }
 
   void _onDisconnected() {
     print('MQTT: Disconnected');
-    _isConnected = false;
-    _connectionController.add(false);
-    // Thử reconnect sau 5 giây
-    Future.delayed(const Duration(seconds: 5), connect);
+    _setConnected(false);
+    _updatesSubscription?.cancel();
+    _updatesSubscription = null;
+
+    if (_disposed) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 5), connect);
+  }
+
+  void _setConnected(bool value) {
+    _isConnected = value;
+    if (!_connectionController.isClosed) {
+      _connectionController.add(value);
+    }
   }
 
   void _subscribeToTopics() {
+    final client = _client;
+    if (client == null) return;
+
     final topics = [
       AppConfig.topicTemp,
       AppConfig.topicHumidity,
@@ -108,10 +132,11 @@ class MqttService {
     ];
 
     for (final topic in topics) {
-      _client.subscribe(topic, MqttQos.atLeastOnce);
+      client.subscribe(topic, MqttQos.atLeastOnce);
     }
 
-    _client.updates!.listen(_onMessageReceived);
+    _updatesSubscription?.cancel();
+    _updatesSubscription = client.updates?.listen(_onMessageReceived);
   }
 
   void _onMessageReceived(List<MqttReceivedMessage<MqttMessage>> messages) {
@@ -119,7 +144,7 @@ class MqttService {
       final topic = msg.topic;
       final publish = msg.payload as MqttPublishMessage;
       final raw = MqttPublishPayload.bytesToStringAsString(
-        publish.payload.message!,
+        publish.payload.message,
       );
       print('MQTT recv: $topic = $raw');
       _handleMessage(topic, raw);
@@ -136,21 +161,31 @@ class MqttService {
         _emitSensor(soilMoisture: int.tryParse(payload) ?? 0);
       } else if (topic == AppConfig.topicPumpStatus) {
         _deviceStates['pump'] = payload.toUpperCase() == 'ON';
-        _deviceStatusController.add(Map.from(_deviceStates));
+        _emitDeviceStates();
       } else if (topic == AppConfig.topicLedStatus) {
         _deviceStates['led'] = payload.toUpperCase() == 'ON';
-        _deviceStatusController.add(Map.from(_deviceStates));
+        _emitDeviceStates();
       } else if (topic == AppConfig.topicMistStatus) {
         _deviceStates['mist'] = payload.toUpperCase() == 'ON';
-        _deviceStatusController.add(Map.from(_deviceStates));
+        _emitDeviceStates();
       } else if (topic == AppConfig.topicAlerts) {
         final json = jsonDecode(payload) as Map<String, dynamic>;
-        _alertController.add(AlertModel.fromJson(json));
+        if (!_alertController.isClosed) {
+          _alertController.add(AlertModel.fromJson(json));
+        }
       } else if (topic == AppConfig.topicVoiceResponse) {
-        _voiceResponseController.add(payload);
+        if (!_voiceResponseController.isClosed) {
+          _voiceResponseController.add(payload);
+        }
       }
     } catch (e) {
       print('MQTT: parse error on $topic — $e');
+    }
+  }
+
+  void _emitDeviceStates() {
+    if (!_deviceStatusController.isClosed) {
+      _deviceStatusController.add(Map.from(_deviceStates));
     }
   }
 
@@ -163,37 +198,53 @@ class MqttService {
     if (humidity != null) _lastHumidity = humidity;
     if (soilMoisture != null) _lastSoil = soilMoisture;
 
-    _sensorController.add(SensorData(
-      temperature: _lastTemp,
-      humidity: _lastHumidity,
-      soilMoisture: _lastSoil,
-      timestamp: DateTime.now(),
-    ));
-  }
-
-  void publishControl(String device, bool on) {
-    String topic;
-    switch (device) {
-      case 'pump': topic = AppConfig.topicPumpControl; break;
-      case 'mist': topic = AppConfig.topicMistControl; break;
-      case 'led':  topic = AppConfig.topicLedControl;  break;
-      default: return;
+    if (!_sensorController.isClosed) {
+      _sensorController.add(SensorData(
+        temperature: _lastTemp,
+        humidity: _lastHumidity,
+        soilMoisture: _lastSoil,
+        timestamp: DateTime.now(),
+      ));
     }
-    _publish(topic, on ? 'ON' : 'OFF');
   }
 
-  void publishVoiceCommand(String text) {
-    _publish(AppConfig.topicVoiceCommand, text);
+  bool publishControl(String device, bool on) {
+    final topic = switch (device) {
+      'pump' => AppConfig.topicPumpControl,
+      'mist' => AppConfig.topicMistControl,
+      'led' => AppConfig.topicLedControl,
+      _ => null,
+    };
+    if (topic == null) return false;
+    return _publish(topic, on ? 'ON' : 'OFF');
   }
 
-  void _publish(String topic, String payload) {
-    if (!_isConnected) return;
-    final builder = MqttClientPayloadBuilder()..addString(payload);
-    _client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+  bool publishVoiceCommand(String text) {
+    return _publish(AppConfig.topicVoiceCommand, text);
+  }
+
+  bool _publish(String topic, String payload) {
+    final client = _client;
+    if (!_isConnected || client == null) return false;
+
+    try {
+      final builder = MqttClientPayloadBuilder()..addString(payload);
+      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+      return true;
+    } catch (e) {
+      print('MQTT: publish error on $topic — $e');
+      return false;
+    }
   }
 
   void disconnect() {
-    try { _client.disconnect(); } catch (_) {}
+    if (_disposed) return;
+    _disposed = true;
+    _reconnectTimer?.cancel();
+    _updatesSubscription?.cancel();
+    try {
+      _client?.disconnect();
+    } catch (_) {}
     _sensorController.close();
     _alertController.close();
     _deviceStatusController.close();

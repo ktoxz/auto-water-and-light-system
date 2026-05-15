@@ -16,15 +16,20 @@ class AlertModel {
   });
 
   factory AlertModel.fromJson(Map<String, dynamic> json) {
+    final rawTimestamp = json['timestamp'];
+    final timestamp = rawTimestamp is String
+        ? DateTime.tryParse(rawTimestamp) ?? DateTime.now()
+        : DateTime.now();
+
     return AlertModel(
-      id: json['id'] ?? '',
-      title: json['title'] ?? '',
-      message: json['message'] ?? '',
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      message: json['message']?.toString() ?? '',
       type: AlertType.values.firstWhere(
         (e) => e.toString().split('.').last == (json['type'] ?? 'warning'),
         orElse: () => AlertType.warning,
       ),
-      timestamp: DateTime.parse(json['timestamp'] ?? DateTime.now().toIso8601String()),
+      timestamp: timestamp,
       isRead: json['is_read'] ?? false,
     );
   }
