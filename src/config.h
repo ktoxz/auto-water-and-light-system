@@ -12,14 +12,18 @@
 #define MQTT_CLIENT_ID "esp32-smarthome-khoi"
 
 // MQTT Topics — khớp với plan & Flutter app của Hậu
-#define TOPIC_TEMP "home/temp"
-#define TOPIC_HUMIDITY "home/humidity"
-#define TOPIC_SOIL "home/soil"
-#define TOPIC_CMD_PUMP_FOG "home/cmd/pump" // V4 cũ → pump
-#define TOPIC_CMD_MIST "home/cmd/mist"     // phun sương riêng nếu cần
-#define TOPIC_CMD_LIGHT "home/cmd/led"     // V5 cũ → led
-#define TOPIC_STATUS "home/status/esp32"
-#define TOPIC_ALERTS "home/alerts"
+// Sửa lại topics cho đúng với plan
+#define TOPIC_CMD_PUMP    "home/pump/control"
+#define TOPIC_CMD_MIST    "home/mist/control"
+#define TOPIC_CMD_LIGHT   "home/led/control"
+
+// Status topics
+#define TOPIC_STATUS_PUMP "home/pump/status"
+#define TOPIC_STATUS_LED  "home/led/status"
+#define TOPIC_STATUS_MIST "home/mist/status"
+
+// Bỏ TOPIC_ALERTS — ESP32 không nên publish alerts
+// Alert do RPi5 xử lý, không phải ESP32
 
 // Pin map — GIỮ NGUYÊN từ code Blynk cũ
 #define SOIL_PIN 32
