@@ -2,7 +2,7 @@
 ## Hệ Thống Chiếu Sáng Thông Minh & Tưới Cây Tự Động Trong Nhà
 
 > **Team:** Hậu & Khôi | **Thời gian:** 3 ngày
-> **Hậu:** giữ Raspberry Pi 5 | **Khôi:** giữ toàn bộ linh kiện còn lại
+> **Hậu:** giữ RPi5, code Flutter app + backend RPi5 | **Khôi:** giữ toàn bộ linh kiện, code ESP32 C++
 
 ---
 
@@ -26,15 +26,16 @@
 | Linh kiện | Ai giữ |
 |-----------|--------|
 | Raspberry Pi 5 8GB + thẻ nhớ 32GB | **Hậu** |
-| 2x ESP32 | Khôi |
+| 1x ESP32 | Khôi |
 | Cảm biến nhiệt ẩm DHT11 | Khôi |
-| Cảm biến độ ẩm đất | Khôi |
+| Bộ cảm biến độ ẩm đất LM393 (board + đầu dò) | Khôi |
 | Máy bơm | Khôi |
 | Máy phun sương | Khôi |
-| 2x Relay module | Khôi |
+| Relay module 2 kênh (bơm + phun sương) | Khôi |
+| Relay module 2 kênh (đèn + dự phòng) | Khôi |
 | 2x Breadboard | Khôi |
-| Cụm pin 3V | Khôi |
-| Đèn LED 2 chân + trở | Khôi |
+| Đèn sợi tóc 12V | Khôi |
+| Đế pin 3x Li-ion 3.7V (nguồn 12V cho đèn) | Khôi |
 
 ---
 
@@ -43,16 +44,17 @@
 ```
 ┌─────────────────────────────────────────────────────┐
 │              Lớp 1 — Edge / Hardware                │
-│  ESP32 #1 (Tưới cây)      ESP32 #2 (Chiếu sáng)    │
-│  - Soil sensor            - DHT11                   │
-│  - Relay → Máy bơm        - Relay → LED             │
-│  - Relay → Phun sương                               │
-└──────────────┬──────────────────────┬───────────────┘
-               │     MQTT over WiFi   │
-┌──────────────▼──────────────────────▼───────────────┐
+│           ESP32 (Khôi phụ trách phần cứng)          │
+│  - LM393 soil sensor (AO + DO)                      │
+│  - DHT11 (nhiệt độ + độ ẩm không khí)               │
+│  - Relay 2 kênh A → Máy bơm + Phun sương            │
+│  - Relay 2 kênh B → Đèn sợi tóc 12V + dự phòng     │
+└──────────────────────┬──────────────────────────────┘
+                       │  MQTT over WiFi
+┌──────────────────────▼──────────────────────────────┐
 │         Lớp 2 — Raspberry Pi 5 (Hậu phụ trách)     │
-│  Mosquitto Broker  │  Vosk STT     │  Intent Parser │
-│  Node-RED          │  Gemini API   │  Telegram Bot  │
+│  Mosquitto Broker  │  Vosk STT     │  Ollama        │
+│  Node-RED          │  Gemma 3 4B   │  Telegram Bot  │
 │  WebSocket Server  │  AI Alert     │  HiveMQ Bridge │
 └──────────────┬──────────────────────────────────────┘
                │  MQTT Bridge (edge-to-cloud)
@@ -62,7 +64,7 @@
 └──────────────┬──────────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────────┐
-│       Lớp 4 — Flutter App Android (Khôi code)       │
+│       Lớp 4 — Flutter App Android (Hậu code)        │
 │  Dashboard  │  Điều khiển  │  Voice  │  Cảnh báo   │
 └─────────────────────────────────────────────────────┘
 ```
@@ -74,9 +76,8 @@
 | Thành phần | Công nghệ | Ghi chú |
 |-----------|-----------|---------|
 | Speech-to-text (local) | **Vosk** `vosk-model-small-vn-0.4` | Offline, chạy trên RPi5, nhận audio từ mic Flutter |
-| Speech-to-text (remote) | **Android STT** built-in | Khi điện thoại khác WiFi, cần internet |
-| Intent parsing | **Local intent parser** Python | Offline, xử lý phủ định tiếng Việt |
-| NLU fallback | **Gemini API** free tier | Chỉ gọi khi câu mơ hồ + có internet |
+| Speech-to-text (remote) | **Android STT** built-in | Khi điện thoại khác WiFi, cần internet điện thoại |
+| NLU — hiểu ý định | **Gemma 3 4B Q4_K_M** qua **Ollama** | Offline hoàn toàn, chạy local trên RPi5, test 20/20 câu tiếng Việt |
 | MQTT local broker | **Mosquitto** trên RPi5 | Giao tiếp ESP32 ↔ RPi5 |
 | MQTT cloud broker | **HiveMQ Cloud** free | Edge-to-cloud, điều khiển từ xa |
 | Điều phối logic | **Node-RED** | Dashboard web local, automation flow |
@@ -89,13 +90,12 @@
 
 ## Luồng Voice Command
 
-### Chế độ Local (cùng WiFi)
+### Chế độ Local (cùng WiFi — offline hoàn toàn)
 ```
 Mic điện thoại (Flutter)
     → WebSocket → RPi5
-    → Vosk nhận dạng tiếng Việt (offline)
-    → Local intent parser (xử lý phủ định)
-    → [nếu mơ hồ + có internet] Gemini API
+    → Vosk STT (audio → text tiếng Việt, offline, < 1s)
+    → Gemma 4 2B Q4 qua Ollama (text → JSON lệnh, offline, ~5–10s)
     → MQTT → ESP32 thực thi
     → Phản hồi text về Flutter
 ```
@@ -103,38 +103,84 @@ Mic điện thoại (Flutter)
 ### Chế độ Remote (khác WiFi / 4G)
 ```
 Mic điện thoại (Flutter)
-    → Android STT (cần internet điện thoại)
+    → Android STT (audio → text, cần internet điện thoại)
     → MQTT → HiveMQ Cloud → RPi5
-    → Local intent parser
-    → [nếu mơ hồ] Gemini API
+    → Gemma 4 2B Q4 qua Ollama (text → JSON lệnh, offline, ~5–10s)
     → MQTT → ESP32 thực thi
     → Phản hồi text về Flutter qua MQTT
 ```
 
+> **Điểm mạnh:** NLU xử lý hoàn toàn offline bằng Gemma 4 local — cả 2 mode đều không phụ thuộc cloud AI
+
 ### Tự động detect mode trong Flutter
-- Thử kết nối WebSocket tới IP RPi5 → thành công: **Local mode**
-- Thất bại → **Remote mode**
+- Thử kết nối WebSocket tới IP RPi5 → thành công: **Local mode** (Vosk + Gemma)
+- Thất bại → **Remote mode** (Android STT + Gemma)
 - Người dùng không cần chọn gì, app tự xử lý hoàn toàn
 
 ### Bảng các tình huống
 
-| Tình huống | Speech-to-text | Truyền lệnh | Hoạt động? |
-|-----------|---------------|------------|-----------|
-| Ở gần, có internet | Vosk (RPi5) | WebSocket local | ✅ |
-| Ở gần, mất internet | Vosk (RPi5) | WebSocket local | ✅ |
-| Ở xa, có internet | Android STT | HiveMQ Cloud | ✅ |
-| Ở xa, mất internet | ❌ | ❌ | ❌ |
-| Mất WiFi hoàn toàn | ❌ | ❌ | ❌ Future: Bluetooth |
+| Tình huống | STT | NLU | Hoạt động? |
+|-----------|-----|-----|-----------|
+| Ở gần, có internet | Vosk offline | Gemma local | ✅ Offline hoàn toàn |
+| Ở gần, mất internet | Vosk offline | Gemma local | ✅ Offline hoàn toàn |
+| Ở xa, có internet | Android STT | Gemma local | ✅ |
+| Ở xa, mất internet | ❌ | — | ❌ |
+| Mất WiFi hoàn toàn | ❌ | — | ❌ Future: Bluetooth |
 
-### Xử lý phủ định trong Local Intent Parser
+### Gemma 3 2B — Cấu hình tối ưu trên RPi5
 
-| Câu nói | Xử lý | Kết quả |
-|---------|-------|---------|
-| "bật đèn" | Rõ ràng | BẬT đèn ✅ |
-| "chói quá đừng bật đèn" | Phủ định + bật | Không làm gì ✅ |
-| "tối quá rồi bật lên đi" | Không phủ định | BẬT đèn ✅ |
-| "cây hơi khô rồi đó" | Confidence thấp | → Gemini API ✅ |
-| "thôi tắt bơm đi đủ rồi" | Rõ ràng | TẮT bơm ✅ |
+| Tối ưu | Cách làm | Lợi ích |
+|--------|---------|---------|
+| Quantization Q4_K_M | `bartowski/gemma-3-2b-it-GGUF` hoặc tự convert | Nhanh hơn ~1.5x, RAM giảm ~40% |
+| Giới hạn context | `PARAMETER num_ctx 512` trong Modelfile | Đủ cho lệnh ngắn, nhanh hơn nhiều |
+| Preload model | `OLLAMA_KEEP_ALIVE=-1` | Load 1 lần, các lần sau không chờ |
+| Temperature thấp | `PARAMETER temperature 0.1` | Output JSON ổn định, ít sai format |
+| Output JSON cố định | System prompt ép format | Sinh ít token → nhanh hơn |
+
+### Modelfile Ollama
+```
+FROM ~/gemma3-2b-it-q4_K_M.gguf
+
+PARAMETER num_ctx 512
+PARAMETER temperature 0.1
+PARAMETER stop "}"
+
+SYSTEM """
+Bạn là bộ điều khiển nhà thông minh. Phân tích câu người dùng và trả về JSON.
+
+Thiết bị hợp lệ:
+- led: đèn, ánh sáng, đèn điện, bóng đèn
+- pump: bơm, tưới, tưới cây, tưới nước, máy bơm
+- mist: sương, phun sương, phun nước, máy phun, độ ẩm
+
+Hành động:
+- ON: bật, mở, khởi động, tưới, tưới đi, bật lên
+- OFF: tắt, đóng, dừng, thôi, ngừng, tắt đi, khóa
+
+Lưu ý quan trọng:
+- Có từ phủ định (đừng, không, chớ, thôi đừng) → đảo ngược hành động
+- Câu mô tả tình trạng dẫn đến hành động → suy ra hành động hợp lý
+- Chỉ trả về JSON, không giải thích gì thêm
+
+Format bắt buộc: {"device":"led/pump/mist","action":"ON/OFF"}
+Không hiểu hoặc không liên quan: {"action":"unknown"}
+"""
+```
+
+### Ví dụ Gemma 3 xử lý — đầy đủ 3 thiết bị
+
+| Câu nói | Kết quả |
+|---------|---------|
+| "bật đèn" | `{"device":"led","action":"ON"}` |
+| "hôm nay trời sáng quá đừng có bật đèn nha" | `{"device":"led","action":"OFF"}` |
+| "tối quá bật đèn lên đi" | `{"device":"led","action":"ON"}` |
+| "tưới cây đi" | `{"device":"pump","action":"ON"}` |
+| "cây hơi khô rồi đó" | `{"device":"pump","action":"ON"}` |
+| "thôi tắt bơm đi đủ rồi" | `{"device":"pump","action":"OFF"}` |
+| "bật phun sương lên" | `{"device":"mist","action":"ON"}` |
+| "độ ẩm thấp quá bật sương lên đi" | `{"device":"mist","action":"ON"}` |
+| "tắt phun sương đi đủ rồi" | `{"device":"mist","action":"OFF"}` |
+| "hôm nay thời tiết đẹp nhỉ" | `{"action":"unknown"}` |
 
 ---
 
@@ -198,14 +244,14 @@ Tất cả cảnh báo: gửi qua **Telegram** + publish `home/alerts` → Flutt
 ## Ngày 1
 
 ### Mục tiêu
-Cài xong RPi5 headless + 2 ESP32 hoạt động + luồng MQTT end-to-end thông suốt.
+Cài xong RPi5 headless + ESP32 hoạt động + luồng MQTT end-to-end thông suốt.
 
 ### Phân công
 
-| | Hậu (RPi5) | Khôi (ESP32 + linh kiện) |
-|--|-----------|--------------------------|
-| Sáng | Cài RPi5 OS headless, SSH, packages | Nối mạch 2 ESP32, test cảm biến Serial Monitor |
-| Chiều | Mosquitto, Node-RED, HiveMQ bridge | Firmware MQTT, kết nối HiveMQ Cloud |
+| | Hậu (RPi5 + Flutter) | Khôi (ESP32 + linh kiện) |
+|--|---------------------|--------------------------|
+| Sáng | Cài RPi5 OS headless, SSH, packages | Nối mạch ESP32, test cảm biến Serial Monitor |
+| Chiều | Mosquitto, Node-RED, HiveMQ bridge + **bắt đầu Flutter UI** | Firmware ESP32 + MQTT lên HiveMQ Cloud |
 | Tối | **Ghép hệ thống, test end-to-end** | **Ghép hệ thống, test end-to-end** |
 
 ---
@@ -253,7 +299,26 @@ bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/mast
 sudo systemctl enable nodered
 
 # Python
-pip install paho-mqtt vosk websockets flask requests pyTelegramBotAPI --break-system-packages
+pip install paho-mqtt vosk websockets flask pyTelegramBotAPI --break-system-packages
+
+# Cài Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Kiểm tra GGUF sẵn có trên HuggingFace (chạy trước)
+huggingface-cli download bartowski/gemma-3-2b-it-GGUF \
+  --include "*Q4_K_M*" --local-dir ~/gemma3-2b-gguf --dry-run
+
+# Nếu có → tải thẳng GGUF (không cần convert)
+huggingface-cli download bartowski/gemma-3-2b-it-GGUF \
+  --include "*Q4_K_M*" --local-dir ~/gemma3-2b-gguf
+
+# Nếu không có → tải model gốc để tự convert qua đêm
+huggingface-cli download google/gemma-3-2b-it \
+  --include "*.safetensors" "*.json" "*.model" \
+  --local-dir ~/gemma3-2b-it
+
+# Giữ model trên RAM
+echo "OLLAMA_KEEP_ALIVE=-1" >> ~/.bashrc && source ~/.bashrc
 
 # Model Vosk tiếng Việt (~40MB)
 wget https://alphacephei.com/vosk/models/vosk-model-small-vn-0.4.zip
@@ -264,36 +329,43 @@ unzip vosk-model-small-vn-0.4.zip
 
 ### Buổi Sáng — Khôi: Nối Mạch Phần Cứng
 
-#### ESP32 #1 — Tưới cây
+#### ESP32 — Tất cả trong 1 board
 
-**Bộ cảm biến độ ẩm đất gồm 2 phần:**
+**Bộ cảm biến độ ẩm đất LM393:**
 - Đầu dò điện trở (que cắm xuống đất, chữ 土壤湿度检测) → cắm 2 chân vào đầu nối phía trên board LM393
 - Board xử lý LM393 (có núm vặn biến trở) → nối vào ESP32
 
 | Linh kiện | Chân ESP32 | Ghi chú |
 |-----------|-----------|---------|
-| Board LM393 — AO | GPIO34 (ADC) | Giá trị analog 0–4095 → map sang 0–100% độ ẩm |
-| Board LM393 — DO | GPIO35 (Digital input) | Interrupt khi vượt ngưỡng vật lý (chỉnh bằng núm vặn) |
-| Board LM393 — VCC | 3.3V | |
-| Board LM393 — GND | GND | |
-| Relay 1 (IN) | GPIO26 | → Máy bơm (nguồn pin 3V) |
-| Relay 2 (IN) | GPIO27 | → Máy phun sương |
-| LED báo trạng thái | GPIO2 | + trở 220Ω |
-
-> ⚠️ Chỉnh núm vặn biến trở trên board LM393 để đặt ngưỡng DO — khuyến nghị ~30% độ ẩm (đất hơi khô) cho cây trong nhà
-
-**Cách dùng AO và DO:**
-- **AO** (polling mỗi 5 giây): đọc giá trị % thực tế → publish `home/soil` → dashboard + cảnh báo thông minh
-- **DO** (interrupt): phản hồi tức thì khi đất vượt ngưỡng vật lý → bật bơm ngay không cần chờ polling
-
-#### ESP32 #2 — Chiếu sáng
-
-| Linh kiện | Chân ESP32 | Ghi chú |
-|-----------|-----------|---------|
+| LM393 — AO | GPIO34 (ADC) | Giá trị 0–4095 → map sang 0–100% độ ẩm |
+| LM393 — DO | GPIO35 (Digital) | Interrupt khi vượt ngưỡng vật lý |
+| LM393 — VCC | 3.3V | |
+| LM393 — GND | GND | |
 | DHT11 (Data) | GPIO4 | Trở pull-up 10kΩ |
-| Relay (IN) | GPIO25 | → LED + trở 220Ω |
+| Relay A — IN1 | GPIO26 | Kênh 1 → Máy bơm |
+| Relay A — IN2 | GPIO27 | Kênh 2 → Máy phun sương |
+| Relay A — VCC | 5V (VIN) | Relay cần 5V để kéo cuộn dây ổn định |
+| Relay A — GND | GND | |
+| Relay B — IN1 | GPIO25 | Kênh 1 → Đèn sợi tóc 12V |
+| Relay B — IN2 | — | Kênh 2 → Không dùng |
+| Relay B — VCC | 5V (VIN) | |
+| Relay B — GND | GND | |
 
+**Nối đèn 12V qua Relay B kênh 1:**
+```
+Relay B — COM → GND chung (GND ESP32 + GND đế pin nối nhau)
+Relay B — NO  → Chân âm đèn sợi tóc
+Đế pin (+) 12V → Chân dương đèn sợi tóc
+```
+
+> ⚠️ **GND của ESP32 và GND của đế pin 12V bắt buộc phải nối chung** — nếu không relay đóng nhưng đèn không sáng
+> ⚠️ Dùng chân **NO (Normally Open)** trên relay — đèn chỉ sáng khi ESP32 ra lệnh bật
+> ⚠️ Chỉnh núm vặn LM393 ngưỡng DO ~30% độ ẩm cho cây trong nhà
 > ⚠️ Test từng linh kiện qua Serial Monitor trước khi nối cả mạch
+
+**Cách dùng AO và DO của LM393:**
+- **AO** (polling 5 giây): đọc giá trị % → publish `home/soil` → dashboard + cảnh báo
+- **DO** (interrupt): phản hồi tức thì khi đất vượt ngưỡng → bật bơm ngay
 
 ---
 
@@ -344,13 +416,34 @@ topic home/# both 0
 - Dashboard: `http://[IP-RPi5]:1880/ui`
 
 ### ✅ Checkpoint Ngày 1
-- [ ] Hậu SSH vào RPi5 thành công
-- [ ] Mosquitto broker chạy ổn định
-- [ ] Khôi: ESP32 #1 đọc soil sensor, publish MQTT lên HiveMQ
-- [ ] Khôi: ESP32 #2 đọc DHT11, điều khiển LED qua relay
-- [ ] Hậu: RPi5 nhận data từ 2 ESP32 qua HiveMQ bridge
-- [ ] Node-RED hiển thị dashboard
-- [ ] Gửi lệnh từ RPi5 bật tắt relay thành công
+- [x] Hậu: Flash RPi OS Lite 64-bit, cấu hình WiFi + SSH headless
+- [x] Hậu: SSH vào RPi5 thành công, cài VNC Server
+- [x] Hậu: Mosquitto broker cài xong, tự khởi động
+- [x] Hậu: Node-RED cài xong, tự khởi động, cài node-red-dashboard
+- [x] Hậu: Python packages cài đủ (paho-mqtt, vosk, websockets, v.v.)
+- [x] Hậu: Model Vosk tiếng Việt tải và giải nén thành công
+- [x] Hậu: HiveMQ Cloud tạo tài khoản + credentials (smart-home-cloud / PUBLISH_SUBSCRIBE)
+- [x] Hậu: Mosquitto bridge config không dùng được → thay bằng Python bridge script
+- [x] Hậu: `bridge.py` (paho-mqtt) kết nối 2 chiều local Mosquitto ↔ HiveMQ Cloud thành công
+- [x] Hậu: `mqtt-bridge.service` systemd tạo xong, enabled, active (running)
+- [x] Hậu: Reboot test — Mosquitto, Node-RED, mqtt-bridge tự khởi động hoàn toàn
+- [x] Hậu: Ollama cài xong, model Gemma 3 4B kéo và test thành công
+- [x] Khôi: ESP32 bật tắt đèn, bơm, phun sương qua relay — test OK
+- [x] Khôi: Cảm biến độ ẩm đất đọc được — test OK
+- [ ] Khôi: Đổi ESP32 từ Blynk → MQTT HiveMQ Cloud (đúng topics trong plan)
+- [ ] Hậu: RPi5 nhận data từ ESP32 qua bridge — test end-to-end
+- [x] Hậu: Project Flutter tạo xong, chạy được trên emulator
+- [x] Hậu: Telegram Bot tạo xong — có token, chat ID
+
+#### Kiểm tra nhanh khi cần verify hệ thống
+```bash
+# Xem tất cả services cùng lúc
+sudo systemctl status mosquitto mqtt-bridge nodered --no-pager
+
+# Test bridge 2 chiều
+mosquitto_pub -h localhost -t "home/test" -m "hello"
+# Vào HiveMQ Web Client → Subscribe home/# → thấy "hello" là OK
+```
 
 ---
 
@@ -361,38 +454,38 @@ Hoàn thiện AI voice pipeline + Telegram Bot + AI cảnh báo + Flutter App 4 
 
 ### Phân công
 
-| | Hậu (RPi5) | Khôi (Flutter) |
-|--|-----------|----------------|
-| Sáng | WebSocket server + Vosk + Intent parser + Gemini | Setup Flutter, màn hình Dashboard + Điều khiển |
-| Chiều | Telegram Bot + AI cảnh báo + Autostart | Màn hình Voice + Cảnh báo |
-| Tối | **Test tích hợp Flutter ↔ RPi5** | **Test tích hợp Flutter ↔ RPi5** |
+| | Hậu (RPi5 + Flutter) | Khôi (ESP32 + hỗ trợ test) |
+|--|---------------------|---------------------------|
+| Sáng | Cài Ollama + Gemma · WebSocket server · Vosk pipeline | Đổi ESP32 sang MQTT HiveMQ · test end-to-end với RPi5 |
+| Chiều | **Flutter: cả 4 màn hình** (Dashboard, Điều khiển, Voice, Cảnh báo) | Telegram Bot + AI cảnh báo + Autostart trên RPi5 |
+| Tối | **Test tích hợp Flutter ↔ RPi5 ↔ ESP32** | **Test tích hợp Flutter ↔ RPi5 ↔ ESP32** |
 
 ---
 
-### Buổi Sáng — Hậu: AI Voice Pipeline
+### Buổi Sáng — Hậu: AI Voice Pipeline trên RPi5
 
 #### Bước 1: WebSocket Server nhận audio
 - `websockets` library, port `8765`
 - Nhận binary audio: **16kHz, mono, 16-bit PCM**
-- Đẩy vào Vosk `KaldiRecognizer` → kết quả text → intent parser
+- Đẩy vào Vosk `KaldiRecognizer` → kết quả text → Ollama
 
-#### Bước 2: Local Intent Parser
-```python
-NEGATIONS = ["đừng", "không", "thôi", "chưa", "thôi đừng", "chớ"]
-DEVICES   = {"đèn": "led", "bơm": "pump", "sương": "mist"}
-ACTIONS   = {"bật": "ON", "tắt": "OFF", "tưới": "ON", "mở": "ON", "đóng": "OFF"}
+#### Bước 2: Ollama + Gemma 3 2B NLU
+- Nhận text từ Vosk → gửi vào Gemma 3 qua Ollama API (localhost:11434)
+- Modelfile: system prompt đầy đủ từ khóa 3 thiết bị, context 512, temperature 0.1
+- Output: `{"device":"led/pump/mist","action":"ON/OFF"}` hoặc `{"action":"unknown"}`
+- Parse JSON → publish MQTT → gửi phản hồi text về Flutter
+
+#### Bước 3: Kiểm tra Gemma 3 hoạt động
+```bash
+ollama run gemma3-smart-home "hôm nay trời sáng quá đừng có bật đèn nha"
+# Phải trả về: {"device":"led","action":"OFF"}
+
+ollama run gemma3-smart-home "tưới cây đi"
+# Phải trả về: {"device":"pump","action":"ON"}
+
+ollama run gemma3-smart-home "bật phun sương lên"
+# Phải trả về: {"device":"mist","action":"ON"}
 ```
-
-| Trường hợp | Xử lý |
-|-----------|-------|
-| Không phủ định + từ khóa rõ | Thực thi ngay |
-| Có phủ định + hành động rõ | Đảo ngược hành động |
-| Không khớp / mơ hồ | Confidence thấp → gọi Gemini |
-
-#### Bước 3: Gemini API Fallback
-- Chỉ gọi khi confidence thấp **VÀ** có internet
-- Timeout: 3 giây → nếu lỗi: `{"action": "unknown"}`
-- API key: [aistudio.google.com](https://aistudio.google.com) (miễn phí)
 
 ---
 
@@ -432,17 +525,18 @@ ACTIONS   = {"bật": "ON", "tắt": "OFF", "tưới": "ON", "mở": "ON", "đó
 
 | Điều kiện | Ngưỡng | Hành động |
 |-----------|--------|-----------|
-| ESP32 #1 offline | Không nhận MQTT > 30s | Telegram 🔴 |
-| ESP32 #2 offline | Không nhận MQTT > 30s | Telegram 🔴 |
+| ESP32 offline | Không nhận MQTT > 30s | Telegram 🔴 |
 
 #### Autostart Services
 Tạo systemd `.service` cho: `nodered`, `vosk-websocket`, `telegram-bot`, `ai-alert`
 
 ---
 
-### Buổi Sáng — Khôi: Flutter Setup + Dashboard + Điều Khiển
+### Buổi Chiều — Hậu: Flutter App 4 Màn Hình (việc chính)
 
-#### Packages `pubspec.yaml`
+> Hậu tập trung toàn bộ buổi chiều cho Flutter. Khôi lo phần Telegram Bot + Autostart trên RPi5 qua SSH.
+
+#### Setup project + Packages `pubspec.yaml`
 ```yaml
 dependencies:
   mqtt_client: ^9.7.4
@@ -455,9 +549,9 @@ dependencies:
 ```
 
 #### Màn hình 1: Dashboard
-- Subscribe: `home/temp`, `home/humidity`, `home/soil`, `home/led/status`, `home/pump/status`
+- Subscribe: `home/temp`, `home/humidity`, `home/soil`, `home/led/status`, `home/pump/status`, `home/mist/status`
 - Gauge nhiệt độ, độ ẩm, card trạng thái thiết bị
-- Indicator online/offline cho từng ESP32
+- Indicator online/offline cho ESP32
 
 #### Màn hình 2: Điều Khiển
 - Toggle: Đèn, Bơm, Phun sương → publish MQTT lên HiveMQ
@@ -465,7 +559,23 @@ dependencies:
 
 ---
 
-### Buổi Chiều — Khôi: Voice + Cảnh Báo
+### Buổi Chiều — Khôi: Telegram Bot + AI Cảnh Báo + Autostart
+
+Khôi SSH vào RPi5 (qua MobaXterm) để làm phần backend còn lại trong khi Hậu tập trung Flutter.
+
+#### Telegram Bot
+1. Tạo bot qua `@BotFather` → lưu token
+2. Lấy chat_id: nhắn tin cho bot → gọi API getUpdates
+3. Implement các lệnh: `/status`, `/pump_on`, `/pump_off`, `/led_on`, `/led_off`, `/mist_on`, `/mist_off`
+
+#### AI Cảnh Báo + Autostart
+- Implement `alert_engine.py` theo bảng 8 loại cảnh báo
+- Tạo systemd service files: `vosk-websocket`, `telegram-bot`, `ai-alert`
+- Test autostart bằng cách reboot RPi5
+
+---
+
+### Hậu tiếp tục Flutter — Màn hình Voice + Cảnh Báo
 
 #### Màn hình 3: Voice Command
 ```
@@ -486,9 +596,19 @@ Thử kết nối WebSocket → IP_RPi5:8765
 - Badge số đỏ khi có cảnh báo chưa đọc
 
 ### ✅ Checkpoint Ngày 2
+- [x] Ollama cài xong
+- [x] Gemma 3 1B pull về — test, kết quả không ổn
+- [x] Chuyển sang Gemma 3 4B — hoạt động tốt hơn
+- [x] Tối ưu Modelfile: temperature 0.0, repeat_penalty 1.5, num_predict 25, few-shot examples
+- [x] Test 20/20 câu tiếng Việt đúng 100% — đủ 3 thiết bị led/pump/mist
+- [x] Xử lý đúng phủ định đơn: "Đừng bật đèn" → OFF
+- [x] Xử lý đúng double negation: "Đừng có tắt đèn nha" → unknown
+- [x] Xử lý đúng câu mô tả tình trạng: "Cây héo hết rồi" → pump ON
+- [x] Modelfile backup vào `raspberry_pi/voice/Modelfile`
+- [ ] Vosk + WebSocket server hoạt động: nói → text realtime
+- [ ] Pipeline hoàn chỉnh: Vosk → Gemma → MQTT → ESP32
 - [ ] Voice local: "bật đèn" → đèn sáng
-- [ ] Voice local: "chói quá đừng bật đèn" → không bật
-- [ ] Gemini xử lý câu mơ hồ đúng
+- [ ] Khôi: ESP32 đã đổi sang MQTT HiveMQ, bỏ Blynk
 - [ ] Đủ 8 loại cảnh báo gửi đúng qua Telegram
 - [ ] Telegram `/status` trả về data realtime
 - [ ] Flutter dashboard hiển thị sensor realtime
@@ -531,7 +651,7 @@ Tích hợp hoàn chỉnh, đo thực nghiệm, quay demo, viết báo cáo.
 
 1. **AI Voice local** — Hậu nói `"chói quá đừng bật đèn"` → không bật
 2. **AI Voice local** — nói `"tưới cây đi"` → máy bơm chạy
-3. **Gemini fallback** — nói câu mơ hồ → hiển thị Gemini xử lý
+3. **Gemma 4 local NLU** — nói câu phức tạp *"cây có vẻ khô bơm nước một chút"* → Gemma hiểu → bật bơm
 4. **Cảnh báo đất khô** — để soil < 20% → tự tưới + Telegram
 5. **Cảnh báo nhiệt độ** — mô phỏng > 35°C → tắt đèn + Telegram
 6. **Telegram Bot** — Khôi gõ `/status` → nhận data realtime
@@ -553,9 +673,9 @@ Tích hợp hoàn chỉnh, đo thực nghiệm, quay demo, viết báo cáo.
    3.3 Sơ đồ nối dây ESP32 #2 — chiếu sáng
 4. Tích hợp AI                             ← TIÊU CHÍ 1
    4.1 Vosk speech-to-text tiếng Việt offline
-   4.2 Local intent parser (xử lý phủ định)
-   4.3 Gemini API NLU fallback
-   4.4 Luồng Local mode vs Remote mode
+   4.2 Gemma 4 2B Q4 qua Ollama — NLU local
+   4.3 Các tối ưu: quantization, context window, system prompt
+   4.4 Luồng Local mode (Vosk + Gemma) vs Remote mode (Android STT + Gemma)
    4.5 AI cảnh báo tự động rule-based
 5. Tích hợp IoT & Telegram                 ← TIÊU CHÍ 2
    5.1 MQTT topics và luồng dữ liệu
@@ -576,7 +696,9 @@ Tích hợp hoàn chỉnh, đo thực nghiệm, quay demo, viết báo cáo.
    8.2 Nhận xét kết quả
 9. Giới hạn & Hướng phát triển
    - Bluetooth fallback khi mất WiFi
-   - Local LLM (Ollama) thay Gemini — hoàn toàn offline
+   - Nâng cấp lên Gemma 3 4B khi có phần cứng mạnh hơn
+   - Streaming response từ Ollama để giảm perceived latency
+   - Thử Gemma 4 E2B khi llama.cpp hỗ trợ ổn định hơn
 10. Kết luận
 ```
 
@@ -585,9 +707,11 @@ Tích hợp hoàn chỉnh, đo thực nghiệm, quay demo, viết báo cáo.
 ## Checklist 5 Tiêu Chí
 
 ### Tiêu chí 1: Tích hợp AI
+- [x] Gemma 3 4B qua Ollama — NLU hoàn toàn local, test 20/20 câu tiếng Việt
+- [x] Tối ưu: few-shot prompting + temperature 0.0 + repeat_penalty 1.5
+- [x] Xử lý phủ định, double negation, câu mô tả tình trạng
 - [ ] Vosk nhận dạng giọng nói tiếng Việt offline
-- [ ] Local intent parser xử lý phủ định
-- [ ] Gemini API NLU fallback khi câu mơ hồ
+- [ ] Điều khiển đủ 3 thiết bị bằng giọng nói: đèn, bơm, phun sương
 - [ ] AI cảnh báo tự động rule-based (8 loại)
 
 ### Tiêu chí 2: Tích hợp IoT — Telegram
@@ -617,17 +741,20 @@ Tích hợp hoàn chỉnh, đo thực nghiệm, quay demo, viết báo cáo.
 ### Tài khoản — Hậu tạo, gửi thông tin cho Khôi
 - [ ] **HiveMQ Cloud** — [hivemq.com/mqtt-cloud-broker](https://www.hivemq.com/mqtt-cloud-broker/) — lưu host/port/username/password
 - [ ] **Telegram Bot** — nhắn `@BotFather`, tạo bot, lưu token
-- [ ] **Google AI Studio** — [aistudio.google.com](https://aistudio.google.com) — lấy Gemini API key
 
 ### Phần mềm — Hậu cài
 - [ ] Raspberry Pi Imager
 - [ ] MobaXterm hoặc Windows Terminal
 - [ ] VNC Viewer
 - [ ] Advanced IP Scanner
+- [ ] Flutter SDK (flutter.dev) + thêm vào PATH
+- [ ] Android Studio (để lấy Android SDK + emulator)
+- [ ] Plugin Flutter + Dart trong IntelliJ (File → Settings → Plugins)
+- [ ] Chạy `flutter doctor --android-licenses` sau khi cài xong
 
 ### Phần mềm — Khôi cài
 - [ ] Arduino IDE + ESP32 board URL + libraries (PubSubClient, DHT, ArduinoJson)
-- [ ] Flutter SDK + Android Studio
+- [ ] Driver CH340 hoặc CP2102 (xem chip trên board ESP32)
 - [ ] Bật Developer Mode + USB Debugging trên điện thoại Android của bạn
 
 ### Lưu ý nguồn điện RPi5
@@ -645,19 +772,13 @@ Tích hợp hoàn chỉnh, đo thực nghiệm, quay demo, viết báo cáo.
 smart-home-iot/
 │
 ├── esp32/                              # C++ (Arduino framework) — Khôi phụ trách
-│   ├── esp32_1_tuoi_cay/               # ESP32 #1: Tưới cây
-│   │   ├── esp32_1_tuoi_cay.ino        # Entry point (setup + loop)
-│   │   ├── config.h                    # WiFi, MQTT broker, pin, ngưỡng cảm biến
-│   │   ├── mqtt_handler.h/.cpp         # Kết nối & xử lý MQTT (PubSubClient)
-│   │   ├── soil_sensor.h/.cpp          # Đọc LM393: AO→GPIO34 (%), DO→GPIO35 (interrupt)
-│   │   └── relay_control.h/.cpp        # Điều khiển relay bơm & phun sương
-│   │
-│   └── esp32_2_chieu_sang/             # ESP32 #2: Chiếu sáng
-│       ├── esp32_2_chieu_sang.ino      # Entry point (setup + loop)
+│   └── esp32_smart_home/               # ESP32 duy nhất: tưới cây + chiếu sáng
+│       ├── esp32_smart_home.ino        # Entry point (setup + loop)
 │       ├── config.h                    # WiFi, MQTT broker, pin, ngưỡng cảm biến
 │       ├── mqtt_handler.h/.cpp         # Kết nối & xử lý MQTT (PubSubClient)
+│       ├── soil_sensor.h/.cpp          # Đọc LM393: AO→GPIO34 (%), DO→GPIO35 (interrupt)
 │       ├── dht_sensor.h/.cpp           # Đọc DHT11: nhiệt độ & độ ẩm (GPIO4)
-│       └── relay_control.h/.cpp        # Điều khiển relay LED (GPIO25)
+│       └── relay_control.h/.cpp        # Điều khiển 3 relay: bơm, phun sương, đèn 12V
 │
 ├── raspberry_pi/                   # Python 3 — Hậu phụ trách
 │   ├── main.py                     # Khởi động toàn bộ services
@@ -666,11 +787,10 @@ smart-home-iot/
 │   ├── voice/                      # AI Voice pipeline
 │   │   ├── websocket_server.py     # Nhận audio stream từ Flutter (port 8765)
 │   │   ├── vosk_stt.py             # Speech-to-text tiếng Việt offline
-│   │   ├── intent_parser.py        # Xử lý phủ định, parse lệnh local
-│   │   └── gemini_nlu.py           # Gemini API fallback khi câu mơ hồ
+│   │   └── ollama_nlu.py           # Gemma 4 2B Q4 qua Ollama — hiểu ý định, output JSON
 │   │
 │   ├── mqtt/                       # MQTT handler
-│   │   ├── broker_config.py        # Cấu hình Mosquitto + HiveMQ bridge
+│   │   ├── bridge.py               # Python bridge: local Mosquitto ↔ HiveMQ Cloud (2 chiều)
 │   │   ├── publisher.py            # Publish lệnh xuống ESP32
 │   │   └── subscriber.py          # Subscribe data từ ESP32, trigger cảnh báo
 │   │
@@ -683,11 +803,12 @@ smart-home-iot/
 │   │   └── vosk-model-small-vn-0.4/
 │   │
 │   └── systemd/                    # Service files để autostart
+│       ├── mqtt-bridge.service     # ✅ Đã tạo và chạy
 │       ├── vosk-websocket.service
 │       ├── telegram-bot.service
 │       └── ai-alert.service
 │
-├── flutter_app/                    # Flutter Android — Khôi phụ trách
+├── flutter_app/                    # Flutter Android — Hậu phụ trách
 │   ├── lib/
 │   │   ├── main.dart               # Entry point
 │   │   ├── config/
@@ -735,14 +856,16 @@ smart-home-iot/
 
 | File / Thư mục | Người làm | Ưu tiên |
 |---------------|-----------|---------|
-| `esp32/esp32_1_tuoi_cay/` | Khôi | Ngày 1 chiều |
-| `esp32/esp32_2_chieu_sang/` | Khôi | Ngày 1 chiều |
-| `raspberry_pi/mqtt/` | Hậu | Ngày 1 chiều |
-| `raspberry_pi/voice/` | Hậu | Ngày 2 sáng |
-| `raspberry_pi/alerts/` | Hậu | Ngày 2 chiều |
-| `flutter_app/services/` | Khôi | Ngày 2 sáng |
-| `flutter_app/screens/` | Khôi | Ngày 2 |
-| `nodered/flows.json` | Hậu | Ngày 1 chiều |
+| `esp32/esp32_smart_home/` | **Khôi** | Ngày 1 chiều |
+| `raspberry_pi/mqtt/` | **Hậu** | Ngày 1 chiều |
+| `raspberry_pi/voice/` | **Hậu** | Ngày 2 sáng |
+| `raspberry_pi/alerts/` | **Khôi** (SSH vào RPi5) | Ngày 2 chiều |
+| `flutter_app/lib/services/` | **Hậu** | Ngày 1 chiều |
+| `flutter_app/lib/screens/dashboard` | **Hậu** | Ngày 1 chiều |
+| `flutter_app/lib/screens/control` | **Hậu** | Ngày 2 sáng |
+| `flutter_app/lib/screens/voice` | **Hậu** | Ngày 2 chiều |
+| `flutter_app/lib/screens/alerts` | **Hậu** | Ngày 2 chiều |
+| `nodered/flows.json` | **Hậu** | Ngày 1 chiều |
 
 ---
 
@@ -781,6 +904,11 @@ smart-home-iot/
 #define SOIL_DRY_THRESHOLD  20    // % — dưới ngưỡng = khô → bật bơm
 #define SOIL_WET_THRESHOLD  80    // % — trên ngưỡng = quá ẩm → tắt bơm
 #define PUMP_MAX_RUNTIME    300   // giây — bơm chạy tối đa 5 phút
+
+// Relay
+#define RELAY_PUMP_PIN      26    // Relay A kênh 1 → Máy bơm
+#define RELAY_MIST_PIN      27    // Relay A kênh 2 → Máy phun sương
+#define RELAY_LIGHT_PIN     25    // Relay B kênh 1 → Đèn sợi tóc 12V
 
 // Cảm biến DHT11
 #define DHT_PIN             4
