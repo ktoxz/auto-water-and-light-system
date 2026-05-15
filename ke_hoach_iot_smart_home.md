@@ -539,13 +539,13 @@ Tạo systemd `.service` cho: `nodered`, `vosk-websocket`, `telegram-bot`, `ai-a
 #### Setup project + Packages `pubspec.yaml`
 ```yaml
 dependencies:
-  mqtt_client: ^9.7.4
-  record: ^5.0.4
-  speech_to_text: ^6.6.0
-  web_socket_channel: ^2.4.0
-  permission_handler: ^11.0.0
-  fl_chart: ^0.66.0
-  provider: ^6.1.1
+   mqtt_client: ^9.7.4
+   record: ^5.0.4
+   speech_to_text: ^6.6.0
+   web_socket_channel: ^2.4.0
+   permission_handler: ^11.0.0
+   fl_chart: ^0.66.0
+   provider: ^6.1.1
 ```
 
 #### Màn hình 1: Dashboard
@@ -605,15 +605,36 @@ Thử kết nối WebSocket → IP_RPi5:8765
 - [x] Xử lý đúng double negation: "Đừng có tắt đèn nha" → unknown
 - [x] Xử lý đúng câu mô tả tình trạng: "Cây héo hết rồi" → pump ON
 - [x] Modelfile backup vào `raspberry_pi/voice/Modelfile`
-- [ ] Vosk + WebSocket server hoạt động: nói → text realtime
-- [ ] Pipeline hoàn chỉnh: Vosk → Gemma → MQTT → ESP32
-- [ ] Voice local: "bật đèn" → đèn sáng
-- [ ] Khôi: ESP32 đã đổi sang MQTT HiveMQ, bỏ Blynk
-- [ ] Đủ 8 loại cảnh báo gửi đúng qua Telegram
-- [ ] Telegram `/status` trả về data realtime
-- [ ] Flutter dashboard hiển thị sensor realtime
-- [ ] Flutter điều khiển đèn/bơm từ xa thành công
-- [ ] Voice hoạt động cả local lẫn remote mode
+- [x] Viết `ollama_nlu.py` — text → Ollama → JSON lệnh → MQTT topic
+- [x] Viết `vosk_stt.py` — Vosk model load OK, transcribe_audio sẵn sàng
+- [x] Viết `websocket_server.py` — nhận text/audio từ Flutter, pipeline hoàn chỉnh
+- [x] Test pipeline: wscat → WebSocket → Ollama → MQTT publish ✅
+- [x] `vosk-websocket.service` systemd enabled, active (running)
+- [x] Telegram Bot tạo xong — kết nối thẳng HiveMQ Cloud, 7 lệnh hoạt động
+- [x] Telegram nhận cảnh báo từ ESP32 qua `home/alerts` ✅
+- [x] Flutter project tạo xong, emulator API 33 chạy được
+- [x] Flutter kết nối MQTT HiveMQ thành công ✅
+- [x] Flutter nhận data sensor từ ESP32 realtime ✅
+- [x] Khôi: ESP32 đổi sang MQTT HiveMQ thành công, bỏ Blynk
+- [x] Khôi: ESP32 publish đủ topics: home/temp, home/humidity, home/soil, home/led/status, home/pump/status
+- [x] Bridge fix vòng lặp — chỉ forward sensor data Local→Cloud, không forward ngược lại
+- [x] Pipeline voice: WebSocket server kết nối HiveMQ Cloud thành công
+- [x] Viết `alert_engine.py` — 8 loại cảnh báo, kết nối HiveMQ, auto action
+- [x] `ai-alert.service` systemd enabled, active (running)
+- [x] `telegram-bot.service` systemd enabled, active (running)
+- [x] Test cảnh báo Telegram nhận được ✅
+- [x] `/status` trả về sensor realtime đúng ✅
+- [x] Flutter: màn hình Voice Command — Remote mode hoàn chỉnh ✅
+- [x] Pipeline voice Remote: Android STT → addUTF8String → HiveMQ → Gemma → ESP32 ✅
+- [x] Gemma hiểu câu tiếng Việt tự nhiên phức tạp: "nóng quá bọc phun sương đi" → mist ON ✅
+- [x] `vosk-websocket.service` subscribe HiveMQ nhận voice command remote mode ✅
+- [x] Fix UTF-8 encoding: đổi addString → addUTF8String trong mqtt_service.dart ✅
+- [x] Đổi STT từ Vosk → PhoWhisper-small (VinAI) — accuracy 100% với giọng người thật ✅
+- [x] Test PhoWhisper: "trời nóng quá bật đèn lên đi" → nhận đúng 100% ✅
+- [x] Test PhoWhisper: "hãy mở đèn cho tôi" → Gemma → home/led/control ON ✅
+- [x] Voice Local mode: WebSocket + PhoWhisper + Gemma pipeline hoàn chỉnh ✅
+- [x] Fix Voice Local mode button disable — parse JSON response đúng ✅
+- [x] WebSocketService auto-detect host: raspberrypi.local / pi-local / 10.0.2.2 ✅
 
 ---
 
@@ -804,7 +825,7 @@ smart-home-iot/
 │   │
 │   └── systemd/                    # Service files để autostart
 │       ├── mqtt-bridge.service     # ✅ Đã tạo và chạy
-│       ├── vosk-websocket.service
+│       ├── vosk-websocket.service  # ✅ Đã tạo và chạy
 │       ├── telegram-bot.service
 │       └── ai-alert.service
 │
