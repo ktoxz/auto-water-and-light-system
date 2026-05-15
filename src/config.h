@@ -11,19 +11,17 @@
 #define MQTT_PASSWORD "Cloud123456"
 #define MQTT_CLIENT_ID "esp32-smarthome-khoi"
 
-// MQTT Topics — khớp với plan & Flutter app của Hậu
-// Sửa lại topics cho đúng với plan
-#define TOPIC_CMD_PUMP    "home/pump/control"
-#define TOPIC_CMD_MIST    "home/mist/control"
-#define TOPIC_CMD_LIGHT   "home/led/control"
-
-// Status topics
+// MQTT Topics — Flutter app dùng cùng các topic này
+#define TOPIC_TEMP "home/temp"
+#define TOPIC_HUMIDITY "home/humidity"
+#define TOPIC_SOIL "home/soil"
+#define TOPIC_CMD_PUMP_FOG "home/pump/control"
+#define TOPIC_CMD_MIST "home/mist/control"
+#define TOPIC_CMD_LIGHT "home/led/control"
+#define TOPIC_STATUS "home/status/esp32"
 #define TOPIC_STATUS_PUMP "home/pump/status"
-#define TOPIC_STATUS_LED  "home/led/status"
 #define TOPIC_STATUS_MIST "home/mist/status"
-
-// Bỏ TOPIC_ALERTS — ESP32 không nên publish alerts
-// Alert do RPi5 xử lý, không phải ESP32
+#define TOPIC_STATUS_LIGHT "home/led/status"
 
 // Pin map — GIỮ NGUYÊN từ code Blynk cũ
 #define SOIL_PIN 32
@@ -34,8 +32,8 @@
 // Ngưỡng cảnh báo — giữ logic auto từ code Blynk cũ
 #define SOIL_AUTO_ON 40         // % — bật bơm khi đất khô hơn này
 #define SOIL_AUTO_OFF 50        // % — tắt bơm khi đủ ẩm (40+10 như cũ)
-#define SOIL_ALERT_DRY 20       // % — cảnh báo critical
-#define SOIL_ALERT_WET 80       // % — cảnh báo critical
+#define SOIL_ALERT_DRY 20       // %
+#define SOIL_ALERT_WET 80       // %
 #define TEMP_ALERT_HIGH 35      // °C
 #define HUM_ALERT_LOW 40        // %
 #define HUM_ALERT_HIGH 85       // %

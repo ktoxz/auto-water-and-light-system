@@ -2,7 +2,6 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <DHT.h>
-#include <ArduinoJson.h>
 #include "config.h"
 
 // ── Objects ───────────────────────────────────────────────────────────────────
@@ -23,20 +22,12 @@ unsigned long lastSensorSend = 0;
 unsigned long lastMqttRetry  = 0;
 unsigned long lastWifiCheck  = 0;
 
-// Cooldown từng loại alert — tránh spam lên MQTT mỗi 2 giây
-unsigned long lastAlertSoilDry  = 0;
-unsigned long lastAlertSoilWet  = 0;
-unsigned long lastAlertTempHigh = 0;
-unsigned long lastAlertHumLow   = 0;
-unsigned long lastAlertHumHigh  = 0;
-
 // ── Timeout / interval constants ──────────────────────────────────────────────
 const unsigned long SENSOR_INTERVAL   =  2000;  // đọc & publish sensor mỗi 2s
 const unsigned long WIFI_TIMEOUT_MS   = 15000;  // chờ WiFi connect tối đa 15s
 const unsigned long MQTT_TIMEOUT_MS   = 10000;  // chờ MQTT connect tối đa 10s
 const unsigned long MQTT_RETRY_MS     =  5000;  // thử lại MQTT sau 5s nếu thất bại
 const unsigned long WIFI_CHECK_MS     = 30000;  // kiểm tra WiFi còn sống mỗi 30s
-const unsigned long ALERT_COOLDOWN_MS = 60000;  // cùng loại alert tối thiểu cách 60s
 
 // ── Prototypes ────────────────────────────────────────────────────────────────
 bool connectWiFi();
@@ -49,8 +40,6 @@ void setRelay(uint8_t pin, bool on, const char* name);
 void publishPumpFogStatus();
 void publishLightStatus();
 void publishDeviceStatuses();
-void publishAlert(const char* type, const char* title, const char* message,
-                  unsigned long& lastSent);
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 void setup() {
@@ -181,10 +170,6 @@ void handleSafety() {
     setRelay(RELAY_PUMP_FOG, false, "pump");
     pumpFogState = false;
     publishPumpFogStatus();
-    // Safety alert: dummy lastSent = 0 để luôn gửi được
-    unsigned long dummy = 0;
-    publishAlert("critical", "Bom tat khan cap",
-                 "Bom chay qua 5 phut, tu dong tat", dummy);
   }
 }
 
@@ -243,27 +228,11 @@ void sendSensorData() {
     mqtt.publish(TOPIC_SOIL, buf);
   }
 
-  // Alerts với cooldown 60s mỗi loại
-  if (currentSoilMoisture < SOIL_ALERT_DRY)
-    publishAlert("critical", "Dat qua kho", "Do am dat duoi 20%", lastAlertSoilDry);
-
-  if (currentSoilMoisture > SOIL_ALERT_WET)
-    publishAlert("warning", "Dat qua am", "Do am dat tren 80%", lastAlertSoilWet);
-
-  if (!isnan(t) && t > TEMP_ALERT_HIGH) {
-    if (lightState) {
-      setRelay(RELAY_LIGHT, false, "light");
-      lightState = false;
-      publishLightStatus();
-    }
-    publishAlert("critical", "Nhiet do cao", "Nhiet do tren 35C, da tat den", lastAlertTempHigh);
+  if (!isnan(t) && t > TEMP_ALERT_HIGH && lightState) {
+    setRelay(RELAY_LIGHT, false, "light");
+    lightState = false;
+    publishLightStatus();
   }
-
-  if (!isnan(h) && h < HUM_ALERT_LOW)
-    publishAlert("warning", "Do am KK thap", "Do am khong khi duoi 40%", lastAlertHumLow);
-
-  if (!isnan(h) && h > HUM_ALERT_HIGH)
-    publishAlert("warning", "Do am KK cao", "Do am khong khi tren 85%", lastAlertHumHigh);
 
 run_auto:
   // Auto mode logic — chạy dù có hay không có mạng
@@ -306,22 +275,3 @@ void publishDeviceStatuses() {
   publishLightStatus();
 }
 
-// lastSent truyền bằng reference — mỗi loại alert dùng biến riêng
-void publishAlert(const char* type, const char* title, const char* message,
-                  unsigned long& lastSent) {
-  unsigned long now = millis();
-  if (now - lastSent < ALERT_COOLDOWN_MS) return; // còn trong cooldown
-  if (!mqtt.connected()) return;
-
-  lastSent = now;
-
-  StaticJsonDocument<200> doc;
-  doc["type"]    = type;
-  doc["title"]   = title;
-  doc["message"] = message;
-  doc["ts"]      = now;
-  char buf[200];
-  serializeJson(doc, buf);
-  mqtt.publish(TOPIC_ALERTS, buf);
-  Serial.printf("[Alert] %s: %s\n", title, message);
-}
