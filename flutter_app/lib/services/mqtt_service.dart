@@ -48,7 +48,7 @@ class MqttService {
     _client.keepAlivePeriod = 20;
     _client.autoReconnect = false; // tắt autoReconnect, tự reconnect thủ công
     _client.logging(on: true);    // bật log để debug
-    _client.connectTimeoutPeriod = 5000; // 5 giây
+    _client.connectTimeoutPeriod = 30000;
 
     _client.connectionMessage = MqttConnectMessage()
         .withClientIdentifier(clientId)
@@ -65,7 +65,7 @@ class MqttService {
     try {
       // Timeout toàn bộ quá trình connect sau 8 giây
       await _client.connect().timeout(
-        const Duration(seconds: 8),
+        const Duration(seconds: 30),
         onTimeout: () {
           print('MQTT: connect() timed out');
           _client.disconnect();
