@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:record/record.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'websocket_service.dart';
@@ -37,8 +38,24 @@ class SttService {
     final localOk = await _wsService.tryConnect();
     if (localOk) {
       _mode = VoiceMode.local;
-      // Forward response từ WebSocket về stream của SttService
-      _wsService.responseStream.listen((r) => _responseController.add(r));
+      // Parse JSON response từ WebSocket
+      _wsService.responseStream.listen((r) {
+        try {
+          final json = jsonDecode(r) as Map<String, dynamic>;
+          final text = json['text'] as String? ?? '';
+          final message = json['message'] as String? ?? r;
+          if (text.isNotEmpty && !_recognizedTextController.isClosed) {
+            _recognizedTextController.add(text);
+          }
+          if (!_responseController.isClosed) {
+            _responseController.add(message);
+          }
+        } catch (_) {
+          if (!_responseController.isClosed) {
+            _responseController.add(r);
+          }
+        }
+      });
       return _mode;
     }
 
@@ -47,7 +64,19 @@ class SttService {
     if (androidOk) {
       _mode = VoiceMode.remote;
       // Forward response từ MQTT voice response
-      _mqttService.voiceResponseStream.listen((r) => _responseController.add(r));
+      _mqttService.voiceResponseStream.listen((r) {
+        try {
+          final json = jsonDecode(r) as Map<String, dynamic>;
+          final message = json['message'] as String? ?? r;
+          if (!_responseController.isClosed) {
+            _responseController.add(message);
+          }
+        } catch (_) {
+          if (!_responseController.isClosed) {
+            _responseController.add(r);
+          }
+        }
+      });
       return _mode;
     }
 
@@ -75,36 +104,51 @@ class SttService {
       return;
     }
 
-    // Stream PCM 16kHz mono 16-bit lên WebSocket
-    final stream = await _recorder.startStream(
-      const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
-        numChannels: 1,
-      ),
-    );
+    try {
+      final stream = await _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+      );
 
-    stream.listen(
-      (chunk) => _wsService.sendAudioChunk(chunk),
-      onDone: () => _isListening = false,
-      cancelOnError: true,
-    );
+      stream.listen(
+            (chunk) => _wsService.sendAudioChunk(chunk),
+        onDone: () => _isListening = false,
+        onError: (_) => _isListening = false,
+        cancelOnError: true,
+      );
+    } catch (e) {
+      _isListening = false;
+    }
   }
 
-  /// Remote mode: Android STT (cần internet điện thoại) → text → MQTT
+  /// Remote mode: Android STT → text → MQTT → RPi5 → Gemma
   Future<void> _startRemoteListening() async {
-    _androidStt.listen(
-      localeId: 'vi_VN',
-      onResult: (result) {
-        if (result.finalResult) {
-          final text = result.recognizedWords;
-          _recognizedTextController.add(text);
-          // Gửi text lên RPi5 qua MQTT → Gemma xử lý
-          _mqttService.publishVoiceCommand(text);
-          _isListening = false;
-        }
-      },
-    );
+    try {
+      await _androidStt.listen(
+        localeId: 'vi_VN',
+        onResult: (result) {
+          if (result.finalResult) {
+            final text = result.recognizedWords;
+            if (text.isNotEmpty) {
+              if (!_recognizedTextController.isClosed) {
+                _recognizedTextController.add(text);
+              }
+              // Gửi text lên RPi5 qua MQTT → Gemma xử lý
+              _mqttService.publishVoiceCommand(text);
+            }
+            _isListening = false;
+          }
+        },
+        listenFor: const Duration(seconds: 15),
+        pauseFor: const Duration(seconds: 3),
+        cancelOnError: true,
+      );
+    } catch (e) {
+      _isListening = false;
+    }
   }
 
   Future<void> stopListening() async {
@@ -114,7 +158,7 @@ class SttService {
     if (_mode == VoiceMode.local) {
       await _recorder.stop();
     } else if (_mode == VoiceMode.remote) {
-      _androidStt.stop();
+      await _androidStt.stop();
     }
   }
 
