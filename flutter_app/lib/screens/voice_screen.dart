@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/stt_service.dart';
@@ -36,11 +37,19 @@ class _VoiceScreenState extends State<VoiceScreen>
     });
 
     _responseSub = stt.responseStream.listen((resp) {
-      if (mounted) {
-        setState(() {
-          _responseText = resp;
-          _isListening = false;
-        });
+      if (!mounted) return;
+      try {
+        final json = jsonDecode(resp) as Map<String, dynamic>;
+        final status = json['status'] as String? ?? '';
+        if (status == 'ok' || status == 'error') {
+          setState(() {
+            _responseText = json['message'] as String? ?? resp;
+            _isListening = false;
+          });
+        }
+        // Bỏ qua nếu status không hợp lệ
+      } catch (_) {
+        // Bỏ qua data không phải JSON
       }
     });
 
@@ -59,7 +68,6 @@ class _VoiceScreenState extends State<VoiceScreen>
     super.dispose();
   }
 
-  // Giữ nguyên logic gốc
   Future<void> _toggleListening() async {
     final stt = context.read<SttService>();
     if (_isListening) {
@@ -71,7 +79,7 @@ class _VoiceScreenState extends State<VoiceScreen>
         _recognizedText = '';
         _responseText = '';
       });
-      await stt.startListening();
+      stt.startListening(); // không await — stream chạy ngầm
     }
   }
 
