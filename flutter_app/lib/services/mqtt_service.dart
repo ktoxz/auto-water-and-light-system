@@ -269,7 +269,7 @@ class MqttService {
     if (!_isConnected || client == null) return false;
 
     try {
-      final builder = MqttClientPayloadBuilder()..addString(payload);
+      final builder = MqttClientPayloadBuilder()..addUTF8String(payload);
       client.publishMessage(topic, MqttQos.atMostOnce, builder.payload!);
       return true;
     } catch (e) {
