@@ -95,7 +95,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
       widget.mqttService.connect(),
       widget.sttService.detectMode(),
     ]).timeout(
-      const Duration(seconds: 10),
+      const Duration(seconds: 20),
       onTimeout: () {
         print('Bootstrap: timeout — vào app luôn');
         return [];

@@ -16,6 +16,7 @@ class _VoiceScreenState extends State<VoiceScreen>
   String _recognizedText = '';
   String _responseText = '';
   late AnimationController _animController;
+  Timer? _modeTimer;
 
   late StreamSubscription _textSub;
   late StreamSubscription _responseSub;
@@ -42,6 +43,11 @@ class _VoiceScreenState extends State<VoiceScreen>
         });
       }
     });
+
+    // Rebuild mỗi 2 giây để cập nhật mode
+    _modeTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -49,9 +55,11 @@ class _VoiceScreenState extends State<VoiceScreen>
     _animController.dispose();
     _textSub.cancel();
     _responseSub.cancel();
+    _modeTimer?.cancel();
     super.dispose();
   }
 
+  // Giữ nguyên logic gốc
   Future<void> _toggleListening() async {
     final stt = context.read<SttService>();
     if (_isListening) {
@@ -105,7 +113,8 @@ class _VoiceScreenState extends State<VoiceScreen>
             child: Chip(
               label: Text(
                 modeLabel,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.bold),
               ),
               backgroundColor: modeColor.withOpacity(0.15),
               labelStyle: TextStyle(color: modeColor),
@@ -120,43 +129,49 @@ class _VoiceScreenState extends State<VoiceScreen>
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight - 36),
+                constraints:
+                BoxConstraints(minHeight: constraints.maxHeight - 36),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Center(
                       child: GestureDetector(
-                        onTap: mode == VoiceMode.unavailable ? null : _toggleListening,
+                        onTap: mode == VoiceMode.unavailable
+                            ? null
+                            : _toggleListening,
                         child: _isListening
                             ? ScaleTransition(
-                                scale: Tween(begin: 0.9, end: 1.08)
-                                    .animate(_animController),
-                                child: const _MicCircle(
-                                  isListening: true,
-                                  color: Colors.blue,
-                                ),
-                              )
+                          scale: Tween(begin: 0.9, end: 1.08)
+                              .animate(_animController),
+                          child: const _MicCircle(
+                            isListening: true,
+                            color: Colors.blue,
+                          ),
+                        )
                             : _MicCircle(
-                                isListening: false,
-                                color: mode == VoiceMode.unavailable
-                                    ? Colors.grey
-                                    : Colors.grey[400]!,
-                              ),
+                          isListening: false,
+                          color: mode == VoiceMode.unavailable
+                              ? Colors.grey
+                              : Colors.grey[400]!,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     FilledButton.icon(
-                      onPressed: mode == VoiceMode.unavailable ? null : _toggleListening,
+                      onPressed: mode == VoiceMode.unavailable
+                          ? null
+                          : _toggleListening,
                       icon: Icon(_isListening ? Icons.stop : Icons.mic),
                       label: Text(
                         mode == VoiceMode.unavailable
                             ? 'Không có mic hoặc kết nối'
                             : _isListening
-                                ? 'Dừng nghe'
-                                : 'Bắt đầu nói',
+                            ? 'Dừng nghe'
+                            : 'Bắt đầu nói',
                       ),
                       style: FilledButton.styleFrom(
-                        backgroundColor: _isListening ? Colors.red : Colors.blue,
+                        backgroundColor:
+                        _isListening ? Colors.red : Colors.blue,
                         foregroundColor: Colors.white,
                         minimumSize: const Size.fromHeight(48),
                       ),
@@ -167,10 +182,13 @@ class _VoiceScreenState extends State<VoiceScreen>
                           ? 'Đang lắng nghe...'
                           : 'Nhấn nút để ra lệnh bằng giọng nói',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: _isListening ? Colors.blue : Colors.grey,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      style:
+                      Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: _isListening
+                            ? Colors.blue
+                            : Colors.grey,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     _ModeDescription(mode: mode),
@@ -191,6 +209,25 @@ class _VoiceScreenState extends State<VoiceScreen>
                       ),
                       const SizedBox(height: 12),
                     ],
+                    if (_isListening && _recognizedText.isNotEmpty)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2),
+                              ),
+                              SizedBox(width: 8),
+                              Text('Gemma đang xử lý...'),
+                            ],
+                          ),
+                        ),
+                      ),
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -232,7 +269,6 @@ const _examples = [
 
 class _ModeDescription extends StatelessWidget {
   final VoiceMode mode;
-
   const _ModeDescription({required this.mode});
 
   @override
@@ -242,8 +278,8 @@ class _ModeDescription extends StatelessWidget {
         'Vosk offline trên RPi5 → Gemma 3 4B',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.green[600],
-            ),
+          color: Colors.green[600],
+        ),
       );
     }
     if (mode == VoiceMode.remote) {
@@ -251,16 +287,16 @@ class _ModeDescription extends StatelessWidget {
         'Android STT → MQTT → Gemma 3 4B',
         textAlign: TextAlign.center,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.orange[700],
-            ),
+          color: Colors.orange[700],
+        ),
       );
     }
     return Text(
       'Voice hiện chưa khả dụng',
       textAlign: TextAlign.center,
       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Colors.red[600],
-          ),
+        color: Colors.red[600],
+      ),
     );
   }
 }
@@ -268,7 +304,6 @@ class _ModeDescription extends StatelessWidget {
 class _MicCircle extends StatelessWidget {
   final bool isListening;
   final Color color;
-
   const _MicCircle({required this.isListening, required this.color});
 
   @override
@@ -294,12 +329,8 @@ class _ResultCard extends StatelessWidget {
   final String label;
   final String text;
   final Color color;
-
-  const _ResultCard({
-    required this.label,
-    required this.text,
-    required this.color,
-  });
+  const _ResultCard(
+      {required this.label, required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -314,15 +345,13 @@ class _ResultCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+          Text(label,
+              style: TextStyle(fontSize: 11, color: Colors.grey[600])),
           const SizedBox(height: 6),
           Text(
             text,
             style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
+                color: color, fontWeight: FontWeight.bold, fontSize: 16),
           ),
         ],
       ),
@@ -333,7 +362,6 @@ class _ResultCard extends StatelessWidget {
 class _CommandRow extends StatelessWidget {
   final String emoji;
   final String text;
-
   const _CommandRow({required this.emoji, required this.text});
 
   @override
@@ -345,7 +373,9 @@ class _CommandRow extends StatelessWidget {
         children: [
           Text(emoji, style: const TextStyle(fontSize: 18)),
           const SizedBox(width: 12),
-          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium)),
+          Expanded(
+              child: Text(text,
+                  style: Theme.of(context).textTheme.bodyMedium)),
         ],
       ),
     );

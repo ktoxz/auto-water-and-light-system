@@ -7,7 +7,7 @@ class AppConfig {
   static const String hiveMqPassword = 'Cloud123456';
 
   // ── Raspberry Pi 5 ────────────────────────────────────────────
-  static const String rpiHost = 'raspberrypi.local';
+  static const String rpiHost = '10.233.91.2';
   static const int websocketPort = 8765;
 
   // ── MQTT Topics ───────────────────────────────────────────────

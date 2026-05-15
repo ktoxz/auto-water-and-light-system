@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/sensor_data.dart';
 import '../services/mqtt_service.dart';
+import '../services/websocket_service.dart';
 import '../widgets/sensor_card.dart';
 import '../config/app_config.dart';
 
@@ -23,29 +24,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, bool> _deviceStates = {};
   bool _mqttConnected = false;
   bool _hasSensorData = false;
-
+  bool _wsConnected = false;
   String _mqttStatus = 'Chưa kết nối MQTT';
 
   late StreamSubscription _sensorSub;
   late StreamSubscription _deviceSub;
   late StreamSubscription _connSub;
   late StreamSubscription _statusSub;
+  Timer? _wsCheckTimer;
 
   @override
   void initState() {
     super.initState();
     final mqtt = context.read<MqttService>();
+    final ws = context.read<WebSocketService>();
 
     _mqttConnected = mqtt.isConnected;
     _deviceStates = Map.from(mqtt.deviceStates);
+    _wsConnected = ws.isConnected;
 
     _sensorSub = mqtt.sensorStream.listen((data) {
-      if (mounted) {
-        setState(() {
-          _sensor = data;
-          _hasSensorData = true;
-        });
-      }
+      if (mounted) setState(() {
+        _sensor = data;
+        _hasSensorData = true;
+      });
     });
 
     _deviceSub = mqtt.deviceStatusStream.listen((states) {
@@ -59,6 +61,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _statusSub = mqtt.statusStream.listen((status) {
       if (mounted) setState(() => _mqttStatus = status);
     });
+
+    // Check WebSocket status mỗi 3 giây
+    _wsCheckTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted) {
+        final ws = context.read<WebSocketService>();
+        setState(() => _wsConnected = ws.isConnected);
+      }
+    });
   }
 
   @override
@@ -67,6 +77,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _deviceSub.cancel();
     _connSub.cancel();
     _statusSub.cancel();
+    _wsCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -111,7 +122,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Device status row
               Row(
                 children: [
                   _DeviceChip(label: 'Bơm', on: _deviceStates['pump'] ?? false, icon: Icons.opacity),
@@ -122,15 +132,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
               const SizedBox(height: 20),
-
               Text(
                 'Cảm Biến',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
-
               GridView.count(
                 crossAxisCount: 2,
                 shrinkWrap: true,
@@ -183,8 +191,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
               const SizedBox(height: 24),
-
-              // Kết nối hệ thống
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -194,19 +200,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Text(
                         'Kết nối hệ thống',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       _buildInfoRow('HiveMQ Cloud', _mqttConnected),
                       _buildInfoRow('ESP32', _mqttConnected && (_hasSensorData || _deviceStates.isNotEmpty)),
-                      _buildInfoRow('RPi5 Broker', false),
+                      _buildInfoRow('RPi5 Broker', _wsConnected),
                       const SizedBox(height: 8),
                       Text(
                         _mqttStatus,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[700],
-                            ),
+                          color: Colors.grey[700],
+                        ),
                       ),
                     ],
                   ),
