@@ -22,10 +22,14 @@ class _AlertsScreenState extends State<AlertsScreen> {
     super.initState();
     final mqtt = context.read<MqttService>();
 
+    // Load history từ MqttService — không mất khi chuyển tab
+    _alerts.addAll(mqtt.alertHistory);
+
+    // Lắng nghe alert mới
     _alertSub = mqtt.alertStream.listen((alert) {
       if (mounted) {
         setState(() {
-          _alerts.insert(0, alert); // mới nhất lên đầu
+          _alerts.insert(0, alert);
           _unreadCount++;
         });
       }
@@ -39,10 +43,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   void _markAllRead() => setState(() => _unreadCount = 0);
-  void _clearAll() => setState(() {
-        _alerts.clear();
-        _unreadCount = 0;
-      });
+
+  void _clearAll() {
+    // Xóa cả history trong MqttService
+    context.read<MqttService>().alertHistory; // readonly
+    setState(() {
+      _alerts.clear();
+      _unreadCount = 0;
+    });
+  }
 
   int get _criticalCount =>
       _alerts.where((a) => a.type == AlertType.critical).length;
@@ -86,82 +95,80 @@ class _AlertsScreenState extends State<AlertsScreen> {
       ),
       body: _alerts.isEmpty
           ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.check_circle_outline,
-                      size: 64, color: Colors.green.withOpacity(0.5)),
-                  const SizedBox(height: 16),
-                  Text('Không có cảnh báo',
-                      style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Hệ thống hoạt động bình thường',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Đang lắng nghe home/alerts...',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.grey[400]),
-                  ),
-                ],
-              ),
-            )
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.check_circle_outline,
+                size: 64, color: Colors.green.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            Text('Không có cảnh báo',
+                style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              'Hệ thống hoạt động bình thường',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Đang lắng nghe home/alerts...',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: Colors.grey[400]),
+            ),
+          ],
+        ),
+      )
           : Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               children: [
-                // Summary bar
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      _SummaryChip(
-                          label: 'Lỗi',
-                          count: _criticalCount,
-                          color: Colors.red),
-                      const SizedBox(width: 8),
-                      _SummaryChip(
-                          label: 'Cảnh báo',
-                          count: _warningCount,
-                          color: Colors.orange),
-                      const SizedBox(width: 8),
-                      _SummaryChip(
-                          label: 'Tổng',
-                          count: _alerts.length,
-                          color: Colors.blue),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: _clearAll,
-                        icon: const Icon(Icons.delete_sweep, size: 16),
-                        label: const Text('Xóa tất cả'),
-                        style: TextButton.styleFrom(
-                            foregroundColor: Colors.grey[600]),
-                      ),
-                    ],
-                  ),
-                ),
-
-                Expanded(
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                    itemCount: _alerts.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (context, index) {
-                      return AlertItem(
-                        alert: _alerts[index],
-                        onDismiss: () =>
-                            setState(() => _alerts.removeAt(index)),
-                      );
-                    },
-                  ),
+                _SummaryChip(
+                    label: 'Lỗi',
+                    count: _criticalCount,
+                    color: Colors.red),
+                const SizedBox(width: 8),
+                _SummaryChip(
+                    label: 'Cảnh báo',
+                    count: _warningCount,
+                    color: Colors.orange),
+                const SizedBox(width: 8),
+                _SummaryChip(
+                    label: 'Tổng',
+                    count: _alerts.length,
+                    color: Colors.blue),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: _clearAll,
+                  icon: const Icon(Icons.delete_sweep, size: 16),
+                  label: const Text('Xóa tất cả'),
+                  style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey[600]),
                 ),
               ],
             ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+              itemCount: _alerts.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                return AlertItem(
+                  alert: _alerts[index],
+                  onDismiss: () =>
+                      setState(() => _alerts.removeAt(index)),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -190,8 +197,7 @@ class _SummaryChip extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   fontSize: 14)),
           const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(color: color, fontSize: 12)),
+          Text(label, style: TextStyle(color: color, fontSize: 12)),
         ],
       ),
     );

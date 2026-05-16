@@ -19,6 +19,10 @@ class MqttService {
   final _statusController = StreamController<String>.broadcast();
   final _voiceResponseController = StreamController<String>.broadcast();
 
+  // Alert history — persist across tab switches
+  final List<AlertModel> _alertHistory = [];
+  List<AlertModel> get alertHistory => List.unmodifiable(_alertHistory);
+
   Stream<SensorData> get sensorStream => _sensorController.stream;
   Stream<AlertModel> get alertStream => _alertController.stream;
   Stream<Map<String, bool>> get deviceStatusStream async* {
@@ -107,17 +111,13 @@ class MqttService {
       } else {
         _setStatus('MQTT TLS state=$state, code=$returnCode, reason=$reason');
         _setConnected(false);
-        try {
-          client.disconnect();
-        } catch (_) {}
+        try { client.disconnect(); } catch (_) {}
       }
     } catch (e) {
       print('MQTT: connect error — $e');
       _setStatus('MQTT TLS lỗi: $e');
       _setConnected(false);
-      try {
-        client.disconnect();
-      } catch (_) {}
+      try { client.disconnect(); } catch (_) {}
     } finally {
       _isConnecting = false;
     }
@@ -135,7 +135,6 @@ class MqttService {
     _setConnected(false);
     _updatesSubscription?.cancel();
     _updatesSubscription = null;
-
     if (_disposed) return;
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(const Duration(seconds: 5), connect);
@@ -143,16 +142,12 @@ class MqttService {
 
   void _setConnected(bool value) {
     _isConnected = value;
-    if (!_connectionController.isClosed) {
-      _connectionController.add(value);
-    }
+    if (!_connectionController.isClosed) _connectionController.add(value);
   }
 
   void _setStatus(String value) {
     _lastStatus = value;
-    if (!_statusController.isClosed) {
-      _statusController.add(value);
-    }
+    if (!_statusController.isClosed) _statusController.add(value);
   }
 
   void _subscribeToTopics() {
@@ -180,11 +175,9 @@ class MqttService {
 
   void _onMessageReceived(List<MqttReceivedMessage<MqttMessage>> messages) {
     for (final msg in messages) {
-      final topic = msg.topic;
+      final topic   = msg.topic;
       final publish = msg.payload as MqttPublishMessage;
-      final raw = MqttPublishPayload.bytesToStringAsString(
-        publish.payload.message,
-      );
+      final raw     = MqttPublishPayload.bytesToStringAsString(publish.payload.message);
       print('MQTT recv: $topic = $raw');
       _setStatus('Nhận $topic = $raw');
       _handleMessage(topic, raw);
@@ -209,9 +202,12 @@ class MqttService {
         _deviceStates['mist'] = payload.toUpperCase() == 'ON';
         _emitDeviceStates();
       } else if (topic == AppConfig.topicAlerts) {
-        final json = jsonDecode(payload) as Map<String, dynamic>;
+        final json  = jsonDecode(payload) as Map<String, dynamic>;
+        final alert = AlertModel.fromJson(json);
+        // Lưu vào history để persist across tabs
+        _alertHistory.insert(0, alert);
         if (!_alertController.isClosed) {
-          _alertController.add(AlertModel.fromJson(json));
+          _alertController.add(alert);
         }
       } else if (topic == AppConfig.topicVoiceResponse) {
         if (!_voiceResponseController.isClosed) {
@@ -238,7 +234,6 @@ class MqttService {
     if (temperature != null) _lastTemp = temperature;
     if (humidity != null) _lastHumidity = humidity;
     if (soilMoisture != null) _lastSoil = soilMoisture;
-
     if (!_sensorController.isClosed) {
       _sensorController.add(SensorData(
         temperature: _lastTemp,
@@ -253,8 +248,8 @@ class MqttService {
     final topic = switch (device) {
       'pump' => AppConfig.topicPumpControl,
       'mist' => AppConfig.topicMistControl,
-      'led' => AppConfig.topicLedControl,
-      _ => null,
+      'led'  => AppConfig.topicLedControl,
+      _      => null,
     };
     if (topic == null) return false;
     return _publish(topic, on ? 'ON' : 'OFF');
@@ -267,7 +262,6 @@ class MqttService {
   bool _publish(String topic, String payload) {
     final client = _client;
     if (!_isConnected || client == null) return false;
-
     try {
       final builder = MqttClientPayloadBuilder()..addUTF8String(payload);
       client.publishMessage(topic, MqttQos.atMostOnce, builder.payload!);
@@ -284,9 +278,7 @@ class MqttService {
     _disposed = true;
     _reconnectTimer?.cancel();
     _updatesSubscription?.cancel();
-    try {
-      _client?.disconnect();
-    } catch (_) {}
+    try { _client?.disconnect(); } catch (_) {}
     _sensorController.close();
     _alertController.close();
     _deviceStatusController.close();
