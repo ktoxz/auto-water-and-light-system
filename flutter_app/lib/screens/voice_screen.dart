@@ -51,16 +51,13 @@ class _VoiceScreenState extends State<VoiceScreen>
       } catch (_) {}
     });
 
-    // Auto redetect mode mỗi 5 giây nếu không đang nghe
     _modeTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       if (!mounted || _isListening) return;
       final stt = context.read<SttService>();
       final ws  = context.read<WebSocketService>();
-      // Nếu mode là local nhưng WS mất → redetect
       if (stt.mode == VoiceMode.local && !ws.isConnected) {
         await stt.detectMode();
       }
-      // Nếu mode là remote nhưng WS vừa connect → redetect
       if (stt.mode == VoiceMode.remote && ws.isConnected) {
         await stt.detectMode();
       }
@@ -110,8 +107,8 @@ class _VoiceScreenState extends State<VoiceScreen>
 
   @override
   Widget build(BuildContext context) {
-    final stt      = context.read<SttService>();
-    final mode     = stt.mode;
+    final stt       = context.read<SttService>();
+    final mode      = stt.mode;
     final modeColor = _modeColor(mode);
     final modeLabel = _modeLabel(mode);
 
@@ -150,7 +147,9 @@ class _VoiceScreenState extends State<VoiceScreen>
                       )
                           : _MicCircle(
                         isListening: false,
-                        color: mode == VoiceMode.unavailable ? Colors.grey : Colors.grey[400]!,
+                        color: mode == VoiceMode.unavailable
+                            ? Colors.grey
+                            : Colors.grey[400]!,
                       ),
                     ),
                   ),
@@ -171,7 +170,9 @@ class _VoiceScreenState extends State<VoiceScreen>
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    _isListening ? 'Đang lắng nghe...' : 'Nhấn nút để ra lệnh bằng giọng nói',
+                    _isListening
+                        ? 'Đang lắng nghe...'
+                        : 'Nhấn nút để ra lệnh bằng giọng nói',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: _isListening ? Colors.blue : Colors.grey,
@@ -196,7 +197,9 @@ class _VoiceScreenState extends State<VoiceScreen>
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            SizedBox(width: 16, height: 16,
+                            SizedBox(
+                                width: 16,
+                                height: 16,
                                 child: CircularProgressIndicator(strokeWidth: 2)),
                             SizedBox(width: 8),
                             Text('Gemma đang xử lý...'),
@@ -211,7 +214,9 @@ class _VoiceScreenState extends State<VoiceScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Ví dụ lệnh',
-                              style: Theme.of(context).textTheme.titleMedium
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
                                   ?.copyWith(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 12),
                           for (final e in _examples)
@@ -268,7 +273,8 @@ class _MicCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 112, height: 112,
+      width: 112,
+      height: 112,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: color.withOpacity(0.15),
@@ -297,7 +303,8 @@ class _ResultCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
         const SizedBox(height: 6),
-        Text(text, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
+        Text(text,
+            style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
       ]),
     );
   }
@@ -310,11 +317,17 @@ class _CommandRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(emoji, style: const TextStyle(fontSize: 18)),
-        const SizedBox(width: 12),
-        Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium)),
+        Text(emoji, style: const TextStyle(fontSize: 15)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.bodySmall,
+            softWrap: true,
+          ),
+        ),
       ]),
     );
   }

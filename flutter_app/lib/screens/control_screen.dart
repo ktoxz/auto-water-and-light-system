@@ -22,8 +22,6 @@ class _ControlScreenState extends State<ControlScreen> {
     super.initState();
     final mqtt = context.read<MqttService>();
     _deviceStates = Map.from(mqtt.deviceStates);
-
-    // Sync trạng thái từ MQTT realtime
     _deviceSub = mqtt.deviceStatusStream.listen((states) {
       if (mounted) setState(() => _deviceStates = states);
     });
@@ -69,7 +67,9 @@ class _ControlScreenState extends State<ControlScreen> {
     final sent = context.read<MqttService>().publishControl('pump', true);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(sent ? 'Đã gửi lệnh bật máy bơm' : 'MQTT chưa kết nối, chưa gửi được lệnh'),
+        content: Text(sent
+            ? 'Đã gửi lệnh bật máy bơm'
+            : 'MQTT chưa kết nối, chưa gửi được lệnh'),
         backgroundColor: sent ? null : Colors.orange,
       ),
     );
@@ -84,14 +84,11 @@ class _ControlScreenState extends State<ControlScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Mode toggle
-            Text(
-              'Chế độ hoạt động',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
+            Text('Chế độ hoạt động',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -111,17 +108,12 @@ class _ControlScreenState extends State<ControlScreen> {
               ],
             ),
             const SizedBox(height: 24),
-
-            // Thiết bị
-            Text(
-              'Thiết bị',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
+            Text('Thiết bị',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-
             DeviceToggle(
               label: 'Máy bơm tưới',
               initialValue: _deviceStates['pump'] ?? false,
@@ -145,7 +137,6 @@ class _ControlScreenState extends State<ControlScreen> {
               enabled: !_autoMode,
               onChanged: (val) => _sendCommand('led', val),
             ),
-
             if (_autoMode) ...[
               const SizedBox(height: 8),
               Container(
@@ -155,30 +146,28 @@ class _ControlScreenState extends State<ControlScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Icon(Icons.info_outline, size: 16, color: Colors.blue),
                     const SizedBox(width: 8),
-                    Text(
-                      'Chế độ tự động: RPi5 điều khiển theo ngưỡng cảm biến',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.blue[700],
-                          ),
+                    Expanded(
+                      child: Text(
+                        'Chế độ tự động: RPi5 điều khiển theo ngưỡng cảm biến',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.blue[700],
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ),
             ],
-
             const SizedBox(height: 24),
-
-            // Quick actions
-            Text(
-              'Hành động nhanh',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
+            Text('Hành động nhanh',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Row(
               children: [
