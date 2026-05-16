@@ -20,6 +20,9 @@ class SttService {
   bool _isListening = false;
   bool get isListening => _isListening;
 
+  bool _wsListenerAttached = false;
+  bool _mqttListenerAttached = false;
+
   final _recognizedTextController = StreamController<String>.broadcast();
   final _responseController = StreamController<String>.broadcast();
 
@@ -32,51 +35,55 @@ class SttService {
   })  : _wsService = wsService,
         _mqttService = mqttService;
 
-  /// Gọi một lần khi app khởi động để xác định mode
+  void _attachWsListener() {
+    if (_wsListenerAttached) return;
+    _wsListenerAttached = true;
+    _wsService.responseStream.listen((r) {
+      try {
+        final json = jsonDecode(r) as Map<String, dynamic>;
+        final text    = json['text']    as String? ?? '';
+        final message = json['message'] as String? ?? r;
+        if (text.isNotEmpty && !_recognizedTextController.isClosed) {
+          _recognizedTextController.add(text);
+        }
+        if (!_responseController.isClosed) {
+          _responseController.add(r); // gửi raw JSON để voice_screen parse
+        }
+      } catch (_) {
+        if (!_responseController.isClosed) _responseController.add(r);
+      }
+    });
+  }
+
+  void _attachMqttListener() {
+    if (_mqttListenerAttached) return;
+    _mqttListenerAttached = true;
+    _mqttService.voiceResponseStream.listen((r) {
+      try {
+        final json    = jsonDecode(r) as Map<String, dynamic>;
+        final message = json['message'] as String? ?? r;
+        if (!_responseController.isClosed) {
+          _responseController.add(json.containsKey('status') ? r : '{"status":"ok","message":"$message"}');
+        }
+      } catch (_) {
+        if (!_responseController.isClosed) _responseController.add(r);
+      }
+    });
+  }
+
+  /// Gọi khi app khởi động hoặc khi muốn redetect
   Future<VoiceMode> detectMode() async {
-    // Thử kết nối WebSocket tới RPi5
     final localOk = await _wsService.tryConnect();
     if (localOk) {
       _mode = VoiceMode.local;
-      // Parse JSON response từ WebSocket
-      _wsService.responseStream.listen((r) {
-        try {
-          final json = jsonDecode(r) as Map<String, dynamic>;
-          final text = json['text'] as String? ?? '';
-          final message = json['message'] as String? ?? r;
-          if (text.isNotEmpty && !_recognizedTextController.isClosed) {
-            _recognizedTextController.add(text);
-          }
-          if (!_responseController.isClosed) {
-            _responseController.add(message);
-          }
-        } catch (_) {
-          if (!_responseController.isClosed) {
-            _responseController.add(r);
-          }
-        }
-      });
+      _attachWsListener();
       return _mode;
     }
 
-    // Thử khởi tạo Android STT
     final androidOk = await _androidStt.initialize();
     if (androidOk) {
       _mode = VoiceMode.remote;
-      // Forward response từ MQTT voice response
-      _mqttService.voiceResponseStream.listen((r) {
-        try {
-          final json = jsonDecode(r) as Map<String, dynamic>;
-          final message = json['message'] as String? ?? r;
-          if (!_responseController.isClosed) {
-            _responseController.add(message);
-          }
-        } catch (_) {
-          if (!_responseController.isClosed) {
-            _responseController.add(r);
-          }
-        }
-      });
+      _attachMqttListener();
       return _mode;
     }
 
@@ -84,7 +91,29 @@ class SttService {
     return _mode;
   }
 
-  /// Bắt đầu lắng nghe
+  /// Switch thủ công giữa local và remote
+  Future<VoiceMode> switchMode() async {
+    if (_isListening) return _mode; // không switch khi đang nghe
+
+    if (_mode == VoiceMode.local) {
+      // Chuyển sang remote
+      final androidOk = await _androidStt.initialize();
+      _mode = androidOk ? VoiceMode.remote : VoiceMode.unavailable;
+      if (_mode == VoiceMode.remote) _attachMqttListener();
+    } else {
+      // Chuyển sang local
+      final localOk = await _wsService.tryConnect();
+      if (localOk) {
+        _mode = VoiceMode.local;
+        _attachWsListener();
+      } else {
+        // Giữ remote nếu không connect được
+        _mode = VoiceMode.remote;
+      }
+    }
+    return _mode;
+  }
+
   Future<void> startListening() async {
     if (_isListening) return;
     _isListening = true;
@@ -96,13 +125,9 @@ class SttService {
     }
   }
 
-  /// Local mode: record PCM → WebSocket → Vosk → Gemma trên RPi5
   Future<void> _startLocalListening() async {
     final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) {
-      _isListening = false;
-      return;
-    }
+    if (!hasPermission) { _isListening = false; return; }
 
     try {
       final stream = await _recorder.startStream(
@@ -112,7 +137,6 @@ class SttService {
           numChannels: 1,
         ),
       );
-
       stream.listen(
             (chunk) => _wsService.sendAudioChunk(chunk),
         onDone: () => _isListening = false,
@@ -124,7 +148,6 @@ class SttService {
     }
   }
 
-  /// Remote mode: Android STT → text → MQTT → RPi5 → Gemma
   Future<void> _startRemoteListening() async {
     try {
       await _androidStt.listen(
@@ -136,7 +159,6 @@ class SttService {
               if (!_recognizedTextController.isClosed) {
                 _recognizedTextController.add(text);
               }
-              // Gửi text lên RPi5 qua MQTT → Gemma xử lý
               _mqttService.publishVoiceCommand(text);
             }
             _isListening = false;
@@ -154,7 +176,6 @@ class SttService {
   Future<void> stopListening() async {
     if (!_isListening) return;
     _isListening = false;
-
     if (_mode == VoiceMode.local) {
       await _recorder.stop();
     } else if (_mode == VoiceMode.remote) {
