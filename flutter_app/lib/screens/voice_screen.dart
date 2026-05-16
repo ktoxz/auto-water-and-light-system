@@ -15,6 +15,7 @@ class VoiceScreen extends StatefulWidget {
 class _VoiceScreenState extends State<VoiceScreen>
     with SingleTickerProviderStateMixin {
   bool _isListening = false;
+  bool _isSwitching = false;
   String _recognizedText = '';
   String _responseText = '';
   late AnimationController _animController;
@@ -40,28 +41,26 @@ class _VoiceScreenState extends State<VoiceScreen>
     _responseSub = stt.responseStream.listen((resp) {
       if (!mounted) return;
       try {
-        final json = jsonDecode(resp) as Map<String, dynamic>;
+        final json   = jsonDecode(resp) as Map<String, dynamic>;
         final status = json['status'] as String? ?? '';
         if (status == 'ok' || status == 'error') {
           setState(() {
             _responseText = json['message'] as String? ?? resp;
-            _isListening = false;
+            _isListening  = false;
           });
         }
       } catch (_) {}
     });
 
+    // Auto redetect nếu WS mất/có kết nối
     _modeTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (!mounted || _isListening) return;
+      if (!mounted || _isListening || _isSwitching) return;
       final stt = context.read<SttService>();
       final ws  = context.read<WebSocketService>();
       if (stt.mode == VoiceMode.local && !ws.isConnected) {
         await stt.detectMode();
+        if (mounted) setState(() {});
       }
-      if (stt.mode == VoiceMode.remote && ws.isConnected) {
-        await stt.detectMode();
-      }
-      if (mounted) setState(() {});
     });
   }
 
@@ -81,12 +80,20 @@ class _VoiceScreenState extends State<VoiceScreen>
       setState(() => _isListening = false);
     } else {
       setState(() {
-        _isListening = true;
+        _isListening    = true;
         _recognizedText = '';
-        _responseText = '';
+        _responseText   = '';
       });
       stt.startListening();
     }
+  }
+
+  Future<void> _switchMode() async {
+    if (_isListening || _isSwitching) return;
+    setState(() => _isSwitching = true);
+    final stt = context.read<SttService>();
+    await stt.switchMode();
+    if (mounted) setState(() => _isSwitching = false);
   }
 
   String _modeLabel(VoiceMode mode) {
@@ -116,6 +123,23 @@ class _VoiceScreenState extends State<VoiceScreen>
       appBar: AppBar(
         title: const Text('Điều Khiển Giọng Nói'),
         actions: [
+          // Nút switch thủ công
+          if (!_isListening)
+            _isSwitching
+                ? const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+                : IconButton(
+              icon: const Icon(Icons.swap_horiz),
+              tooltip: mode == VoiceMode.local
+                  ? 'Chuyển sang Remote'
+                  : 'Chuyển sang Local',
+              onPressed: _switchMode,
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Chip(
@@ -197,9 +221,7 @@ class _VoiceScreenState extends State<VoiceScreen>
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            SizedBox(
-                                width: 16,
-                                height: 16,
+                            SizedBox(width: 16, height: 16,
                                 child: CircularProgressIndicator(strokeWidth: 2)),
                             SizedBox(width: 8),
                             Text('Gemma đang xử lý...'),
@@ -214,9 +236,7 @@ class _VoiceScreenState extends State<VoiceScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Ví dụ lệnh',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
+                              style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 12),
                           for (final e in _examples)
@@ -273,8 +293,7 @@ class _MicCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 112,
-      height: 112,
+      width: 112, height: 112,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: color.withOpacity(0.15),
@@ -322,11 +341,9 @@ class _CommandRow extends StatelessWidget {
         Text(emoji, style: const TextStyle(fontSize: 15)),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            text,
-            style: Theme.of(context).textTheme.bodySmall,
-            softWrap: true,
-          ),
+          child: Text(text,
+              style: Theme.of(context).textTheme.bodySmall,
+              softWrap: true),
         ),
       ]),
     );
