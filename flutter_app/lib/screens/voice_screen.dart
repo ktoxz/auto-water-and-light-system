@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/stt_service.dart';
+import '../services/websocket_service.dart';
 
 class VoiceScreen extends StatefulWidget {
   const VoiceScreen({super.key});
@@ -47,14 +48,22 @@ class _VoiceScreenState extends State<VoiceScreen>
             _isListening = false;
           });
         }
-        // Bỏ qua nếu status không hợp lệ
-      } catch (_) {
-        // Bỏ qua data không phải JSON
-      }
+      } catch (_) {}
     });
 
-    // Rebuild mỗi 2 giây để cập nhật mode
-    _modeTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    // Auto redetect mode mỗi 5 giây nếu không đang nghe
+    _modeTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!mounted || _isListening) return;
+      final stt = context.read<SttService>();
+      final ws  = context.read<WebSocketService>();
+      // Nếu mode là local nhưng WS mất → redetect
+      if (stt.mode == VoiceMode.local && !ws.isConnected) {
+        await stt.detectMode();
+      }
+      // Nếu mode là remote nhưng WS vừa connect → redetect
+      if (stt.mode == VoiceMode.remote && ws.isConnected) {
+        await stt.detectMode();
+      }
       if (mounted) setState(() {});
     });
   }
@@ -79,36 +88,30 @@ class _VoiceScreenState extends State<VoiceScreen>
         _recognizedText = '';
         _responseText = '';
       });
-      stt.startListening(); // không await — stream chạy ngầm
+      stt.startListening();
     }
   }
 
   String _modeLabel(VoiceMode mode) {
     switch (mode) {
-      case VoiceMode.local:
-        return 'LOCAL';
-      case VoiceMode.remote:
-        return 'REMOTE';
-      case VoiceMode.unavailable:
-        return 'UNAVAILABLE';
+      case VoiceMode.local:       return 'LOCAL';
+      case VoiceMode.remote:      return 'REMOTE';
+      case VoiceMode.unavailable: return 'UNAVAILABLE';
     }
   }
 
   Color _modeColor(VoiceMode mode) {
     switch (mode) {
-      case VoiceMode.local:
-        return Colors.green;
-      case VoiceMode.remote:
-        return Colors.orange;
-      case VoiceMode.unavailable:
-        return Colors.red;
+      case VoiceMode.local:       return Colors.green;
+      case VoiceMode.remote:      return Colors.orange;
+      case VoiceMode.unavailable: return Colors.red;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final stt = context.read<SttService>();
-    final mode = stt.mode;
+    final stt      = context.read<SttService>();
+    final mode     = stt.mode;
     final modeColor = _modeColor(mode);
     final modeLabel = _modeLabel(mode);
 
@@ -119,11 +122,8 @@ class _VoiceScreenState extends State<VoiceScreen>
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Chip(
-              label: Text(
-                modeLabel,
-                style: const TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.bold),
-              ),
+              label: Text(modeLabel,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
               backgroundColor: modeColor.withOpacity(0.15),
               labelStyle: TextStyle(color: modeColor),
               padding: EdgeInsets.zero,
@@ -132,136 +132,99 @@ class _VoiceScreenState extends State<VoiceScreen>
         ],
       ),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-              child: ConstrainedBox(
-                constraints:
-                BoxConstraints(minHeight: constraints.maxHeight - 36),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Center(
-                      child: GestureDetector(
-                        onTap: mode == VoiceMode.unavailable
-                            ? null
-                            : _toggleListening,
-                        child: _isListening
-                            ? ScaleTransition(
-                          scale: Tween(begin: 0.9, end: 1.08)
-                              .animate(_animController),
-                          child: const _MicCircle(
-                            isListening: true,
-                            color: Colors.blue,
-                          ),
-                        )
-                            : _MicCircle(
-                          isListening: false,
-                          color: mode == VoiceMode.unavailable
-                              ? Colors.grey
-                              : Colors.grey[400]!,
-                        ),
+        child: LayoutBuilder(builder: (context, constraints) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight - 36),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: GestureDetector(
+                      onTap: mode == VoiceMode.unavailable ? null : _toggleListening,
+                      child: _isListening
+                          ? ScaleTransition(
+                        scale: Tween(begin: 0.9, end: 1.08).animate(_animController),
+                        child: const _MicCircle(isListening: true, color: Colors.blue),
+                      )
+                          : _MicCircle(
+                        isListening: false,
+                        color: mode == VoiceMode.unavailable ? Colors.grey : Colors.grey[400]!,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      onPressed: mode == VoiceMode.unavailable
-                          ? null
-                          : _toggleListening,
-                      icon: Icon(_isListening ? Icons.stop : Icons.mic),
-                      label: Text(
-                        mode == VoiceMode.unavailable
-                            ? 'Không có mic hoặc kết nối'
-                            : _isListening
-                            ? 'Dừng nghe'
-                            : 'Bắt đầu nói',
-                      ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor:
-                        _isListening ? Colors.red : Colors.blue,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size.fromHeight(48),
-                      ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: mode == VoiceMode.unavailable ? null : _toggleListening,
+                    icon: Icon(_isListening ? Icons.stop : Icons.mic),
+                    label: Text(
+                      mode == VoiceMode.unavailable
+                          ? 'Không có mic hoặc kết nối'
+                          : _isListening ? 'Dừng nghe' : 'Bắt đầu nói',
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      _isListening
-                          ? 'Đang lắng nghe...'
-                          : 'Nhấn nút để ra lệnh bằng giọng nói',
-                      textAlign: TextAlign.center,
-                      style:
-                      Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: _isListening
-                            ? Colors.blue
-                            : Colors.grey,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _isListening ? Colors.red : Colors.blue,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
                     ),
-                    const SizedBox(height: 8),
-                    _ModeDescription(mode: mode),
-                    const SizedBox(height: 20),
-                    if (_recognizedText.isNotEmpty) ...[
-                      _ResultCard(
-                        label: 'Bạn nói:',
-                        text: _recognizedText,
-                        color: Colors.blue,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    if (_responseText.isNotEmpty) ...[
-                      _ResultCard(
-                        label: 'Kết quả:',
-                        text: _responseText,
-                        color: Colors.green,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    if (_isListening && _recognizedText.isNotEmpty)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2),
-                              ),
-                              SizedBox(width: 8),
-                              Text('Gemma đang xử lý...'),
-                            ],
-                          ),
-                        ),
-                      ),
-                    Card(
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    _isListening ? 'Đang lắng nghe...' : 'Nhấn nút để ra lệnh bằng giọng nói',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: _isListening ? Colors.blue : Colors.grey,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _ModeDescription(mode: mode),
+                  const SizedBox(height: 20),
+                  if (_recognizedText.isNotEmpty) ...[
+                    _ResultCard(label: 'Bạn nói:', text: _recognizedText, color: Colors.blue),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_responseText.isNotEmpty) ...[
+                    _ResultCard(label: 'Kết quả:', text: _responseText, color: Colors.green),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_isListening && _recognizedText.isNotEmpty)
+                    const Center(
                       child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
-                              'Ví dụ lệnh',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 12),
-                            for (final e in _examples)
-                              _CommandRow(emoji: e[0], text: e[1]),
+                            SizedBox(width: 16, height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2)),
+                            SizedBox(width: 8),
+                            Text('Gemma đang xử lý...'),
                           ],
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Ví dụ lệnh',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 12),
+                          for (final e in _examples)
+                            _CommandRow(emoji: e[0], text: e[1]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            );
-          },
-        ),
+            ),
+          );
+        }),
       ),
     );
   }
@@ -282,30 +245,18 @@ class _ModeDescription extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (mode == VoiceMode.local) {
-      return Text(
-        'PhoWhisper offline trên RPi5 → Gemma 3 4B',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Colors.green[600],
-        ),
-      );
+      return Text('PhoWhisper offline trên RPi5 → Gemma 3 4B',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.green[600]));
     }
     if (mode == VoiceMode.remote) {
-      return Text(
-        'Android STT → MQTT → Gemma 3 4B',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Colors.orange[700],
-        ),
-      );
+      return Text('Android STT → MQTT → Gemma 3 4B',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.orange[700]));
     }
-    return Text(
-      'Voice hiện chưa khả dụng',
-      textAlign: TextAlign.center,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-        color: Colors.red[600],
-      ),
-    );
+    return Text('Voice hiện chưa khả dụng',
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.red[600]));
   }
 }
 
@@ -317,28 +268,21 @@ class _MicCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 112,
-      height: 112,
+      width: 112, height: 112,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: color.withOpacity(0.15),
         border: Border.all(color: color, width: 2),
       ),
-      child: Icon(
-        isListening ? Icons.mic : Icons.mic_none,
-        size: 56,
-        color: color,
-      ),
+      child: Icon(isListening ? Icons.mic : Icons.mic_none, size: 56, color: color),
     );
   }
 }
 
 class _ResultCard extends StatelessWidget {
-  final String label;
-  final String text;
+  final String label, text;
   final Color color;
-  const _ResultCard(
-      {required this.label, required this.text, required this.color});
+  const _ResultCard({required this.label, required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -350,42 +294,28 @@ class _ResultCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
-              style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-          const SizedBox(height: 6),
-          Text(
-            text,
-            style: TextStyle(
-                color: color, fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-        ],
-      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+        const SizedBox(height: 6),
+        Text(text, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
+      ]),
     );
   }
 }
 
 class _CommandRow extends StatelessWidget {
-  final String emoji;
-  final String text;
+  final String emoji, text;
   const _CommandRow({required this.emoji, required this.text});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 18)),
-          const SizedBox(width: 12),
-          Expanded(
-              child: Text(text,
-                  style: Theme.of(context).textTheme.bodyMedium)),
-        ],
-      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(emoji, style: const TextStyle(fontSize: 18)),
+        const SizedBox(width: 12),
+        Expanded(child: Text(text, style: Theme.of(context).textTheme.bodyMedium)),
+      ]),
     );
   }
 }
