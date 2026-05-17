@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../config/app_config.dart';
@@ -21,6 +22,7 @@ class WebSocketService {
     final hosts = [
       'raspberrypi.local', // production — điện thoại cùng WiFi RPi5
       'pi-local',          // hostname thay thế
+      '10.255.29.2',       // IP tĩnh RPi5
       '10.0.2.2',          // Android Studio emulator
       '10.0.3.2',          // Genymotion emulator
     ];
@@ -29,7 +31,6 @@ class WebSocketService {
       try {
         final uri = Uri.parse('ws://$host:${AppConfig.websocketPort}');
         print('[WS] Trying $uri...');
-
         final channel = WebSocketChannel.connect(uri);
         await channel.ready.timeout(const Duration(seconds: 2));
 
@@ -79,10 +80,17 @@ class WebSocketService {
     _channel!.sink.add(text);
   }
 
-  /// Gửi audio chunk PCM 16kHz mono 16-bit lên RPi5 → Vosk
+  /// Gửi audio chunk PCM 16kHz mono 16-bit lên RPi5
   void sendAudioChunk(Uint8List pcmBytes) {
     if (!_isConnected || _channel == null) return;
     _channel!.sink.add(pcmBytes);
+  }
+
+  /// Báo hiệu kết thúc audio — Pi5 sẽ transcribe toàn bộ buffer 1 lần
+  void sendEndOfAudio() {
+    if (!_isConnected || _channel == null) return;
+    _channel!.sink.add(jsonEncode({"type": "end"}));
+    print('[WS] Sent end-of-audio signal');
   }
 
   void disconnect() {

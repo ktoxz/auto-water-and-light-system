@@ -22,6 +22,7 @@ class MqttService {
   // Alert history — persist across tab switches
   final List<AlertModel> _alertHistory = [];
   List<AlertModel> get alertHistory => List.unmodifiable(_alertHistory);
+  void clearAlertHistory() => _alertHistory.clear();
 
   Stream<SensorData> get sensorStream => _sensorController.stream;
   Stream<AlertModel> get alertStream => _alertController.stream;

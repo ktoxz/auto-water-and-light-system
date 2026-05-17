@@ -6,7 +6,8 @@ import '../services/mqtt_service.dart';
 import '../widgets/alert_item.dart';
 
 class AlertsScreen extends StatefulWidget {
-  const AlertsScreen({super.key});
+  final Function(int)? onNavigate;
+  const AlertsScreen({super.key, this.onNavigate});
 
   @override
   State<AlertsScreen> createState() => _AlertsScreenState();
@@ -21,11 +22,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
   void initState() {
     super.initState();
     final mqtt = context.read<MqttService>();
-
-    // Load history từ MqttService — không mất khi chuyển tab
     _alerts.addAll(mqtt.alertHistory);
 
-    // Lắng nghe alert mới
     _alertSub = mqtt.alertStream.listen((alert) {
       if (mounted) {
         setState(() {
@@ -45,8 +43,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   void _markAllRead() => setState(() => _unreadCount = 0);
 
   void _clearAll() {
-    // Xóa cả history trong MqttService
-    context.read<MqttService>().alertHistory; // readonly
+    context.read<MqttService>().clearAlertHistory();
     setState(() {
       _alerts.clear();
       _unreadCount = 0;
@@ -87,10 +84,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
         ),
         actions: [
           if (_alerts.isNotEmpty)
-            TextButton(
-              onPressed: _markAllRead,
-              child: const Text('Đọc tất cả'),
-            ),
+            TextButton(onPressed: _markAllRead, child: const Text('Đọc tất cả')),
         ],
       ),
       body: _alerts.isEmpty
@@ -104,21 +98,17 @@ class _AlertsScreenState extends State<AlertsScreen> {
             Text('Không có cảnh báo',
                 style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            Text(
-              'Hệ thống hoạt động bình thường',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Colors.grey),
-            ),
+            Text('Hệ thống hoạt động bình thường',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Colors.grey)),
             const SizedBox(height: 8),
-            Text(
-              'Đang lắng nghe home/alerts...',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.grey[400]),
-            ),
+            Text('Đang lắng nghe home/alerts...',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey[400])),
           ],
         ),
       )
@@ -129,26 +119,19 @@ class _AlertsScreenState extends State<AlertsScreen> {
             child: Row(
               children: [
                 _SummaryChip(
-                    label: 'Lỗi',
-                    count: _criticalCount,
-                    color: Colors.red),
+                    label: 'Lỗi', count: _criticalCount, color: Colors.red),
                 const SizedBox(width: 8),
                 _SummaryChip(
-                    label: 'Cảnh báo',
-                    count: _warningCount,
-                    color: Colors.orange),
+                    label: 'Cảnh báo', count: _warningCount, color: Colors.orange),
                 const SizedBox(width: 8),
                 _SummaryChip(
-                    label: 'Tổng',
-                    count: _alerts.length,
-                    color: Colors.blue),
+                    label: 'Tổng', count: _alerts.length, color: Colors.blue),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: _clearAll,
                   icon: const Icon(Icons.delete_sweep, size: 16),
                   label: const Text('Xóa tất cả'),
-                  style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey[600]),
+                  style: TextButton.styleFrom(foregroundColor: Colors.grey[600]),
                 ),
               ],
             ),
@@ -161,8 +144,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
               itemBuilder: (context, index) {
                 return AlertItem(
                   alert: _alerts[index],
-                  onDismiss: () =>
-                      setState(() => _alerts.removeAt(index)),
+                  onDismiss: () => setState(() => _alerts.removeAt(index)),
+                  onNavigate: widget.onNavigate,
                 );
               },
             ),
@@ -177,9 +160,7 @@ class _SummaryChip extends StatelessWidget {
   final String label;
   final int count;
   final Color color;
-
-  const _SummaryChip(
-      {required this.label, required this.count, required this.color});
+  const _SummaryChip({required this.label, required this.count, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -192,10 +173,7 @@ class _SummaryChip extends StatelessWidget {
       child: Row(
         children: [
           Text('$count',
-              style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14)),
+              style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)),
           const SizedBox(width: 4),
           Text(label, style: TextStyle(color: color, fontSize: 12)),
         ],

@@ -178,6 +178,7 @@ class SttService {
     _isListening = false;
     if (_mode == VoiceMode.local) {
       await _recorder.stop();
+      _wsService.sendEndOfAudio();
     } else if (_mode == VoiceMode.remote) {
       await _androidStt.stop();
     }

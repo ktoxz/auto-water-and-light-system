@@ -28,11 +28,8 @@ class _SmartHomeAppState extends State<SmartHomeApp> {
   void initState() {
     super.initState();
     mqttService = MqttService();
-    wsService = WebSocketService();
-    sttService = SttService(
-      wsService: wsService,
-      mqttService: mqttService,
-    );
+    wsService   = WebSocketService();
+    sttService  = SttService(wsService: wsService, mqttService: mqttService);
   }
 
   @override
@@ -60,10 +57,7 @@ class _SmartHomeAppState extends State<SmartHomeApp> {
           ),
           appBarTheme: const AppBarTheme(elevation: 0, centerTitle: true),
         ),
-        home: AppBootstrap(
-          mqttService: mqttService,
-          sttService: sttService,
-        ),
+        home: AppBootstrap(mqttService: mqttService, sttService: sttService),
       ),
     );
   }
@@ -72,12 +66,7 @@ class _SmartHomeAppState extends State<SmartHomeApp> {
 class AppBootstrap extends StatefulWidget {
   final MqttService mqttService;
   final SttService sttService;
-
-  const AppBootstrap({
-    super.key,
-    required this.mqttService,
-    required this.sttService,
-  });
+  const AppBootstrap({super.key, required this.mqttService, required this.sttService});
 
   @override
   State<AppBootstrap> createState() => _AppBootstrapState();
@@ -101,9 +90,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
         return [];
       },
     );
-
     print('Bootstrap: done, MQTT=${widget.mqttService.isConnected}');
-
     if (mounted) setState(() {});
   }
 
@@ -142,17 +129,21 @@ class MainApp extends StatefulWidget {
 class _MainAppState extends State<MainApp> {
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    ControlScreen(),
-    VoiceScreen(),
-    AlertsScreen(),
-  ];
+  void _navigateTo(int index) {
+    setState(() => _selectedIndex = index);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final screens = [
+      const DashboardScreen(),
+      const ControlScreen(),
+      const VoiceScreen(),
+      AlertsScreen(onNavigate: _navigateTo),
+    ];
+
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: screens[_selectedIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (i) => setState(() => _selectedIndex = i),
