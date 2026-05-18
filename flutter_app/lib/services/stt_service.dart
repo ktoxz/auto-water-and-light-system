@@ -40,14 +40,13 @@ class SttService {
     _wsListenerAttached = true;
     _wsService.responseStream.listen((r) {
       try {
-        final json = jsonDecode(r) as Map<String, dynamic>;
-        final text    = json['text']    as String? ?? '';
-        final message = json['message'] as String? ?? r;
+        final data    = jsonDecode(r) as Map<String, dynamic>;
+        final text    = data['text']    as String? ?? '';
         if (text.isNotEmpty && !_recognizedTextController.isClosed) {
           _recognizedTextController.add(text);
         }
         if (!_responseController.isClosed) {
-          _responseController.add(r); // gửi raw JSON để voice_screen parse
+          _responseController.add(r); // raw JSON → voice_screen parse
         }
       } catch (_) {
         if (!_responseController.isClosed) _responseController.add(r);
@@ -60,10 +59,15 @@ class SttService {
     _mqttListenerAttached = true;
     _mqttService.voiceResponseStream.listen((r) {
       try {
-        final json    = jsonDecode(r) as Map<String, dynamic>;
-        final message = json['message'] as String? ?? r;
+        final data = jsonDecode(r) as Map<String, dynamic>;
+        // Đảm bảo có field status để voice_screen nhận đúng
+        if (!data.containsKey('status')) {
+          data['status'] = 'ok';
+        }
+        // Encode lại bằng jsonEncode — tránh lỗi UTF-8 khi build string thủ công
+        final normalized = jsonEncode(data);
         if (!_responseController.isClosed) {
-          _responseController.add(json.containsKey('status') ? r : '{"status":"ok","message":"$message"}');
+          _responseController.add(normalized);
         }
       } catch (_) {
         if (!_responseController.isClosed) _responseController.add(r);
@@ -71,7 +75,6 @@ class SttService {
     });
   }
 
-  /// Gọi khi app khởi động hoặc khi muốn redetect
   Future<VoiceMode> detectMode() async {
     final localOk = await _wsService.tryConnect();
     if (localOk) {
@@ -91,23 +94,19 @@ class SttService {
     return _mode;
   }
 
-  /// Switch thủ công giữa local và remote
   Future<VoiceMode> switchMode() async {
-    if (_isListening) return _mode; // không switch khi đang nghe
+    if (_isListening) return _mode;
 
     if (_mode == VoiceMode.local) {
-      // Chuyển sang remote
       final androidOk = await _androidStt.initialize();
       _mode = androidOk ? VoiceMode.remote : VoiceMode.unavailable;
       if (_mode == VoiceMode.remote) _attachMqttListener();
     } else {
-      // Chuyển sang local
       final localOk = await _wsService.tryConnect();
       if (localOk) {
         _mode = VoiceMode.local;
         _attachWsListener();
       } else {
-        // Giữ remote nếu không connect được
         _mode = VoiceMode.remote;
       }
     }

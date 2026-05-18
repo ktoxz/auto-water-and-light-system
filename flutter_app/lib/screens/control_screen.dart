@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/mqtt_service.dart';
 import '../widgets/device_toggle.dart';
 import '../widgets/mode_badge.dart';
+import '../responsive_utils.dart';
 
 class ControlScreen extends StatefulWidget {
   const ControlScreen({super.key});
@@ -80,16 +81,15 @@ class _ControlScreenState extends State<ControlScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Điều Khiển')),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(ResponsiveUtils.getSpacing(context, type: 'lg')),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Chế độ hoạt động',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: ResponsiveUtils.getTitleSize(context))),
+            SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'md')),
             Row(
               children: [
                 Expanded(
@@ -98,7 +98,7 @@ class _ControlScreenState extends State<ControlScreen> {
                     child: ModeBadge(mode: 'Tự động', isActive: _autoMode),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: ResponsiveUtils.getSpacing(context, type: 'md')),
                 Expanded(
                   child: GestureDetector(
                     onTap: () => setState(() => _autoMode = false),
@@ -107,13 +107,12 @@ class _ControlScreenState extends State<ControlScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xxl')),
             Text('Thiết bị',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: ResponsiveUtils.getTitleSize(context))),
+            SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'md')),
             DeviceToggle(
               label: 'Máy bơm tưới',
               initialValue: _deviceStates['pump'] ?? false,
@@ -121,7 +120,7 @@ class _ControlScreenState extends State<ControlScreen> {
               enabled: !_autoMode,
               onChanged: (val) => _sendCommand('pump', val),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'sm')),
             DeviceToggle(
               label: 'Máy phun sương',
               initialValue: _deviceStates['mist'] ?? false,
@@ -129,7 +128,7 @@ class _ControlScreenState extends State<ControlScreen> {
               enabled: !_autoMode,
               onChanged: (val) => _sendCommand('mist', val),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'sm')),
             DeviceToggle(
               label: 'Đèn sợi tóc 12V',
               initialValue: _deviceStates['led'] ?? false,
@@ -138,23 +137,27 @@ class _ControlScreenState extends State<ControlScreen> {
               onChanged: (val) => _sendCommand('led', val),
             ),
             if (_autoMode) ...[
-              const SizedBox(height: 8),
+              SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'sm')),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: EdgeInsets.all(ResponsiveUtils.getSpacing(context, type: 'md')),
                 decoration: BoxDecoration(
                   color: Colors.blue.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(
+                      ResponsiveUtils.getBorderRadius(context, size: 'normal')),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.info_outline, size: 16, color: Colors.blue),
-                    const SizedBox(width: 8),
+                    Icon(Icons.info_outline,
+                        size: ResponsiveUtils.getIconSize(context, purpose: 'small'),
+                        color: Colors.blue),
+                    SizedBox(width: ResponsiveUtils.getSpacing(context, type: 'md')),
                     Expanded(
                       child: Text(
                         'Chế độ tự động: RPi5 điều khiển theo ngưỡng cảm biến',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.blue[700],
+                          fontSize: ResponsiveUtils.getSmallSize(context),
                         ),
                       ),
                     ),
@@ -162,13 +165,12 @@ class _ControlScreenState extends State<ControlScreen> {
                 ),
               ),
             ],
-            const SizedBox(height: 24),
+            SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xxl')),
             Text('Hành động nhanh',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: ResponsiveUtils.getTitleSize(context))),
+            SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'md')),
             Row(
               children: [
                 Expanded(
@@ -179,11 +181,12 @@ class _ControlScreenState extends State<ControlScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: EdgeInsets.symmetric(
+                          vertical: ResponsiveUtils.getSpacing(context, type: 'lg')),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: ResponsiveUtils.getSpacing(context, type: 'md')),
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _emergencyStop,
@@ -192,13 +195,14 @@ class _ControlScreenState extends State<ControlScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: EdgeInsets.symmetric(
+                          vertical: ResponsiveUtils.getSpacing(context, type: 'lg')),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 32),
+            SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xxl')),
           ],
         ),
       ),

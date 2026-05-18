@@ -5,7 +5,7 @@ import '../responsive_utils.dart';
 class AlertItem extends StatelessWidget {
   final AlertModel alert;
   final VoidCallback? onDismiss;
-  final Function(int)? onNavigate; // 0=Dashboard, 1=Control, 2=Voice, 3=Alerts
+  final Function(int)? onNavigate;
 
   const AlertItem({
     super.key,
@@ -38,7 +38,6 @@ class AlertItem extends StatelessWidget {
     return '${diff.inDays} ngày trước';
   }
 
-  // Xác định màn hình navigate dựa vào alert type
   int? get _targetScreen {
     final sensorAlerts = [
       'temp_high', 'soil_dry', 'soil_wet',
@@ -50,11 +49,11 @@ class AlertItem extends StatelessWidget {
         alert.title.toLowerCase().contains('nhiệt') ||
         alert.title.toLowerCase().contains('đất') ||
         alert.title.toLowerCase().contains('độ ẩm'))) {
-      return 0; // Dashboard
+      return 0;
     }
     if (controlAlerts.any((t) => alert.message.contains(t) ||
         alert.title.toLowerCase().contains('bơm'))) {
-      return 1; // Control
+      return 1;
     }
     return null;
   }
@@ -68,6 +67,7 @@ class AlertItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scale = ResponsiveUtils.getScale(context);
     return Dismissible(
       key: Key(alert.id.isEmpty ? alert.message : alert.id),
       direction: DismissDirection.endToStart,
@@ -79,7 +79,11 @@ class AlertItem extends StatelessWidget {
           color: Colors.red.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Icon(Icons.delete_outline, color: Colors.red),
+        child: Icon(
+          Icons.delete_outline,
+          color: Colors.red,
+          size: scale * 24,
+        ),
       ),
       child: Card(
         shape: RoundedRectangleBorder(
@@ -105,7 +109,11 @@ class AlertItem extends StatelessWidget {
                     color: _color.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(_icon, color: _color, size: 20),
+                  child: Icon(
+                    _icon,
+                    color: _color,
+                    size: scale * 18,
+                  ),
                 ),
                 SizedBox(width: ResponsiveUtils.getSpacing(context, type: 'md')),
                 Expanded(
@@ -117,22 +125,29 @@ class AlertItem extends StatelessWidget {
                           Expanded(
                             child: Text(
                               alert.title,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: ResponsiveUtils.getBodySize(context),
+                              ),
                             ),
                           ),
                           if (_targetScreen != null)
-                            Icon(Icons.arrow_forward_ios,
-                                size: 12, color: Colors.grey[400]),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: scale * 10,
+                              color: Colors.grey[400],
+                            ),
                         ],
                       ),
-                      const SizedBox(height: 4),
+                      SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xs')),
                       Text(
                         alert.message,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey[600],
+                          fontSize: ResponsiveUtils.getSmallSize(context),
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xs')),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -140,14 +155,14 @@ class AlertItem extends StatelessWidget {
                             _timeAgo,
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: Colors.grey[400],
-                              fontSize: 11,
+                              fontSize: (10 * scale).clamp(9, 12),
                             ),
                           ),
                           if (_actionLabel.isNotEmpty)
                             Text(
                               _actionLabel,
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: (10 * scale).clamp(9, 12),
                                 color: _color,
                                 fontWeight: FontWeight.w600,
                               ),

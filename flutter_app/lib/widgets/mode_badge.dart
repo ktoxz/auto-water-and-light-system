@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../responsive_utils.dart';
 
 class ModeBadge extends StatelessWidget {
   final String mode;
@@ -14,7 +15,7 @@ class ModeBadge extends StatelessWidget {
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      padding: EdgeInsets.symmetric(vertical: ResponsiveUtils.getSpacing(context, type: 'md'), horizontal: ResponsiveUtils.getSpacing(context, type: 'lg')),
       decoration: BoxDecoration(
         color: isActive ? color.withOpacity(0.12) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),

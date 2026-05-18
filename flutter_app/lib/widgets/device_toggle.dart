@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../responsive_utils.dart';
 
 class DeviceToggle extends StatefulWidget {
   final String label;
@@ -45,7 +46,7 @@ class _DeviceToggleState extends State<DeviceToggle> {
       child: ListTile(
         leading: AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.all(8),
+          padding: EdgeInsets.all(ResponsiveUtils.getSpacing(context, type: 'sm')),
           decoration: BoxDecoration(
             color: _value
                 ? activeColor.withOpacity(0.15)

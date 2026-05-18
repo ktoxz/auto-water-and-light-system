@@ -6,6 +6,7 @@ import '../services/mqtt_service.dart';
 import '../services/websocket_service.dart';
 import '../widgets/sensor_card.dart';
 import '../config/app_config.dart';
+import '../responsive_utils.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -24,6 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Map<String, bool> _deviceStates = {};
   bool _mqttConnected = false;
   bool _hasSensorData = false;
+  bool _receivedAnyMessageFromESP32 = false;
   bool _wsConnected = false;
   String _mqttStatus = 'Chưa kết nối MQTT';
 
@@ -47,15 +49,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (mounted) setState(() {
         _sensor = data;
         _hasSensorData = true;
+        _receivedAnyMessageFromESP32 = true;
       });
     });
 
     _deviceSub = mqtt.deviceStatusStream.listen((states) {
-      if (mounted) setState(() => _deviceStates = states);
+      if (mounted) setState(() {
+        _deviceStates = states;
+        _receivedAnyMessageFromESP32 = true;
+      });
     });
 
     _connSub = mqtt.connectionStream.listen((connected) {
-      if (mounted) setState(() => _mqttConnected = connected);
+      if (mounted) setState(() {
+        _mqttConnected = connected;
+        if (!connected) {
+          _receivedAnyMessageFromESP32 = false;
+        }
+      });
     });
 
     _statusSub = mqtt.statusStream.listen((status) {
@@ -88,12 +99,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isNarrowScreen = screenWidth < 500;
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dashboard'),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
+            padding: EdgeInsets.only(right: ResponsiveUtils.getSpacing(context, type: 'lg')),
             child: Row(
               children: [
                 Icon(
@@ -101,12 +115,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   size: 10,
                   color: _mqttConnected ? Colors.green : Colors.red,
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: ResponsiveUtils.getSpacing(context, type: 'xs')),
                 Text(
                   _mqttConnected ? 'Online' : 'Offline',
                   style: TextStyle(
                     color: _mqttConnected ? Colors.green : Colors.red,
-                    fontSize: 13,
+                    fontSize: ResponsiveUtils.getSmallSize(context),
                   ),
                 ),
               ],
@@ -118,34 +132,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onRefresh: () async => await Future.delayed(const Duration(seconds: 1)),
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(ResponsiveUtils.getSpacing(context, type: 'lg')),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  _DeviceChip(label: 'Bơm', on: _deviceStates['pump'] ?? false, icon: Icons.opacity),
-                  const SizedBox(width: 8),
-                  _DeviceChip(label: 'Sương', on: _deviceStates['mist'] ?? false, icon: Icons.cloud),
-                  const SizedBox(width: 8),
-                  _DeviceChip(label: 'Đèn', on: _deviceStates['led'] ?? false, icon: Icons.light_mode),
-                ],
-              ),
-              const SizedBox(height: 20),
+              // Device chips row - responsive
+              if (isNarrowScreen)
+                Column(
+                  children: [
+                    _DeviceChip(label: 'Bơm', on: _deviceStates['pump'] ?? false, icon: Icons.opacity),
+                    SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'sm')),
+                    _DeviceChip(label: 'Sương', on: _deviceStates['mist'] ?? false, icon: Icons.cloud),
+                    SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'sm')),
+                    _DeviceChip(label: 'Đèn', on: _deviceStates['led'] ?? false, icon: Icons.light_mode),
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    _DeviceChip(label: 'Bơm', on: _deviceStates['pump'] ?? false, icon: Icons.opacity),
+                    SizedBox(width: ResponsiveUtils.getSpacing(context, type: 'sm')),
+                    _DeviceChip(label: 'Sương', on: _deviceStates['mist'] ?? false, icon: Icons.cloud),
+                    SizedBox(width: ResponsiveUtils.getSpacing(context, type: 'sm')),
+                    _DeviceChip(label: 'Đèn', on: _deviceStates['led'] ?? false, icon: Icons.light_mode),
+                  ],
+                ),
+              SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xl')),
               Text(
                 'Cảm Biến',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
+                  fontSize: ResponsiveUtils.getTitleSize(context),
                 ),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'md')),
               GridView.count(
-                crossAxisCount: 2,
+                crossAxisCount: ResponsiveUtils.getGridColumns(context),
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 1.1,
+                mainAxisSpacing: ResponsiveUtils.getSpacing(context, type: 'md'),
+                crossAxisSpacing: ResponsiveUtils.getSpacing(context, type: 'md'),
+                childAspectRatio: ResponsiveUtils.getGridAspectRatio(context),
                 children: [
                   SensorCard(
                     label: 'Nhiệt độ',
@@ -190,10 +217,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xxl')),
               Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(ResponsiveUtils.getSpacing(context, type: 'lg')),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -201,24 +228,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         'Kết nối hệ thống',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
+                          fontSize: ResponsiveUtils.getTitleSize(context),
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'md')),
                       _buildInfoRow('HiveMQ Cloud', _mqttConnected),
-                      _buildInfoRow('ESP32', _mqttConnected && (_hasSensorData || _deviceStates.isNotEmpty)),
+                      _buildInfoRow('ESP32', _mqttConnected && _receivedAnyMessageFromESP32),
                       _buildInfoRow('RPi5 Broker', _wsConnected),
-                      const SizedBox(height: 8),
+                      SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'sm')),
                       Text(
                         _mqttStatus,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Colors.grey[700],
+                          fontSize: ResponsiveUtils.getSmallSize(context),
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xxl')),
             ],
           ),
         ),

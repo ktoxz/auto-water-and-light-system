@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/stt_service.dart';
 import '../services/websocket_service.dart';
+import '../responsive_utils.dart';
 
 class VoiceScreen extends StatefulWidget {
   const VoiceScreen({super.key});
@@ -155,7 +156,12 @@ class _VoiceScreenState extends State<VoiceScreen>
       body: SafeArea(
         child: LayoutBuilder(builder: (context, constraints) {
           return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            padding: EdgeInsets.fromLTRB(
+              ResponsiveUtils.getSpacing(context, type: 'xl'),
+              ResponsiveUtils.getSpacing(context, type: 'md'),
+              ResponsiveUtils.getSpacing(context, type: 'xl'),
+              ResponsiveUtils.getSpacing(context, type: 'xxl'),
+            ),
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: constraints.maxHeight - 36),
               child: Column(
@@ -167,13 +173,18 @@ class _VoiceScreenState extends State<VoiceScreen>
                       child: _isListening
                           ? ScaleTransition(
                         scale: Tween(begin: 0.9, end: 1.08).animate(_animController),
-                        child: const _MicCircle(isListening: true, color: Colors.blue),
+                        child: _MicCircle(
+                          isListening: true,
+                          color: Colors.blue,
+                          size: ResponsiveUtils.getIconSize(context, purpose: 'xxlarge'),
+                        ),
                       )
                           : _MicCircle(
                         isListening: false,
                         color: mode == VoiceMode.unavailable
                             ? Colors.grey
                             : Colors.grey[400]!,
+                        size: ResponsiveUtils.getIconSize(context, purpose: 'xxlarge'),
                       ),
                     ),
                   ),
@@ -189,7 +200,8 @@ class _VoiceScreenState extends State<VoiceScreen>
                     style: FilledButton.styleFrom(
                       backgroundColor: _isListening ? Colors.red : Colors.blue,
                       foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(48),
+                      minimumSize: Size.fromHeight(
+                          ResponsiveUtils.getButtonHeight(context)),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -288,18 +300,28 @@ class _ModeDescription extends StatelessWidget {
 class _MicCircle extends StatelessWidget {
   final bool isListening;
   final Color color;
-  const _MicCircle({required this.isListening, required this.color});
+  final double size;
+  const _MicCircle({
+    required this.isListening,
+    required this.color,
+    this.size = 112,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 112, height: 112,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: color.withOpacity(0.15),
         border: Border.all(color: color, width: 2),
       ),
-      child: Icon(isListening ? Icons.mic : Icons.mic_none, size: 56, color: color),
+      child: Icon(
+        isListening ? Icons.mic : Icons.mic_none,
+        size: size * 0.5,
+        color: color,
+      ),
     );
   }
 }
@@ -313,17 +335,26 @@ class _ResultCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(ResponsiveUtils.getSpacing(context, type: 'lg')),
       decoration: BoxDecoration(
         color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(
+            ResponsiveUtils.getBorderRadius(context, size: 'normal')),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-        const SizedBox(height: 6),
+        Text(label,
+            style: TextStyle(
+              fontSize: ResponsiveUtils.getSmallSize(context),
+              color: Colors.grey[600],
+            )),
+        SizedBox(height: ResponsiveUtils.getSpacing(context, type: 'xs')),
         Text(text,
-            style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: ResponsiveUtils.getTitleSize(context),
+            )),
       ]),
     );
   }
@@ -336,13 +367,18 @@ class _CommandRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: EdgeInsets.symmetric(
+          vertical: ResponsiveUtils.getSpacing(context, type: 'xs')),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(emoji, style: const TextStyle(fontSize: 15)),
-        const SizedBox(width: 8),
+        Text(emoji,
+            style: TextStyle(
+                fontSize: ResponsiveUtils.getBodySize(context))),
+        SizedBox(width: ResponsiveUtils.getSpacing(context, type: 'md')),
         Expanded(
           child: Text(text,
-              style: Theme.of(context).textTheme.bodySmall,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontSize: ResponsiveUtils.getSmallSize(context),
+              ),
               softWrap: true),
         ),
       ]),
